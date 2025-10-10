@@ -1,0 +1,7 @@
+flask
+pymupdf
+werkzeug
+firebase-admin
+weasyprint
+reportlab
+gunicorn  
