@@ -1,4 +1,15 @@
 """
+replitで変更したデータをGitHubに反映させるときは次のコードをShellにコピペ
+
+git add .
+git commit -m "update"
+git push
+
+↑git commit -m ""の""の中に更新内容を書く
+別にupdateのままでもおけ丸水産
+"""
+
+"""
 最初にnewtab→shell
 shell内で以下を実行
 pip install flask pymupdf firebase-admin reportlab weasyprint
@@ -14,6 +25,7 @@ from werkzeug.utils import secure_filename
 import html
 import firebase_admin
 from firebase_admin import credentials, firestore
+import json
 
 # --- WeasyPrintのモジュールをインポート ---
 from weasyprint import HTML
@@ -58,7 +70,13 @@ from weasyprint.urls import path2url
 font_url = path2url(font_path)
 
 # Firebaseを初期化
-cred = credentials.Certificate("serAccoCaMnFV.json")  # 右側のFilesに入れたkeyを取得
+cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+if cred_json:
+    cred_dict = json.loads(cred_json)
+    cred = credentials.Certificate(cred_dict)
+else:
+    cred = credentials.Certificate("serAccoCaMnFv.json")
+
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
