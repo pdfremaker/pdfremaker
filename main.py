@@ -10,11 +10,10 @@ git push
 """
 
 # Import the necessary modules
-from flask import Flask, request, render_template_string, jsonify, render_template, send_file
+from flask import Flask, request, render_template_string, jsonify, send_file
 import os
 import html
 import json
-from typing import Optional, Dict, Any
 from werkzeug.utils import secure_filename
 import pymupdf as fitz  # PyMuPDF
 import firebase_admin
@@ -42,7 +41,6 @@ FONT_FILE_MAP = {
     "Verdana, sans-serif": "ipaexg.ttf",  # 代替としてIPAexゴシック
 }
 
-
 def get_font_path(app_root, font_family_name="IPAexGothic"):
     font_file = FONT_FILE_MAP.get(font_family_name, "ipaexg.ttf")
     font_path = os.path.join(app_root, font_file)
@@ -58,21 +56,31 @@ font_path = get_font_path(app_root, "IPAexGothic")
 font_url = path2url(font_path)
 
 # Firebaseを初期化
-cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-if cred_json:
-    cred_dict = json.loads(cred_json)
-    cred = credentials.Certificate(cred_dict)
-else:
-    cred = credentials.Certificate("serAccoCaMnFv.json")
-
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+try:
+    cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if cred_json:
+        cred_dict = json.loads(cred_json)
+        cred = credentials.Certificate(cred_dict)
+    else:
+        cred = credentials.Certificate(os.path.join(app_root, "serAccoCaMnFv.json"))
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    print(f"⚠️ Firebase初期化に失敗: {e}")
+    db = None
 
 
 def get_document(collection_name, doc_id):
-    doc_ref = db.collection(collection_name).document(doc_id)
-    docf = doc_ref.get()
-    return docf.to_dict() if docf.exists else None
+    if db is None:
+        print("⚠️ Firestoreが初期化されていません")
+        return None
+    try:
+        doc_ref = db.collection(collection_name).document(doc_id)
+        docf = doc_ref.get()
+        return docf.to_dict() if docf.exists else None
+    except Exception as e:
+        print(f"⚠️ Firestoreアクセス失敗: {e}")
+        return None
 
 
 app = Flask(__name__)
@@ -148,7 +156,7 @@ HTML_FORM = """
         <form method=post enctype=multipart/form-data>
 
             <div class="align-right-container">
-                <a href="https://03b5d2fe-5aad-4c9d-969d-32d1d7c1af6e-00-k58ex9qtsoqz.pike.replit.dev/" class="button-link">
+                <a href="/edit" class="button-link">
                     <b>生徒設定編集画面へ</b>
                 </a>
             </div>
@@ -187,12 +195,6 @@ HTML_FORM = """
                 <p style="color:green; font-weight:bold;">設定が確認できました。ファイルをアップロードしてください。</p>`;
         }
     });
-    document.getElementById("fetch-button").addEventListener("click", async function() {
-        const id = document.getElementById("student-id").value;
-        if (!id) {
-            alert("生徒IDを入力してください。");
-            return;
-        }
         const res = await fetch(`/get_message?id=${encodeURIComponent(id)}`);
         const data = await res.json();
         const div = document.getElementById("student-info");
@@ -222,12 +224,177 @@ def return_page():
     return HTML_FORM
 
 
+HTML_EDIT = """
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Firestore 設定ページ</title>
+  <style>
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; }
+    .container { max-width: 600px; margin: auto; text-align: center; }
+    h1 { color: #5a5a5a; }
+    p { color: #666; }
+    form { background: white; padding: 2em; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-top: 1em; }
+    input, select, button { margin: 10px; font-size: 16px; }
+    input[type=text], input[type=number] {
+      width: 95%; padding: 10px; border-radius: 5px; border: 1px solid #ccc;
+    }
+    button, input[type=button], input[type=submit] {
+      background-color: #007bff; color: white; padding: 10px 20px;
+      border: none; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%;
+      transition: background-color 0.3s ease;
+    }
+    button:hover { background-color: #0056b3; }
+    .button-link {
+      text-decoration: none; background-color:#228b22; color: white;
+      padding: 6px 6px; border-radius: 5px; display: inline-block; transition: background-color 0.3s; margin-right: 10px;
+    }
+    .button-link:hover { background-color: #333333; }
+    #text { font-size: 40px; line-height: 40px; margin-top: 20px; }
+    #message { margin-top: 20px; font-size: 20px; display: none; white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Firestore 生徒設定エディタ</h1>
+    <p>生徒のフォント・文字サイズ・行間などを設定します。</p>
+
+    <div class="align-right-container">
+      <a href="/" class="button-link"><b>再構成画面へ戻る</b></a>
+    </div>
+
+    <form>
+      <h2>行間スライダー</h2>
+      <label for="lineSlider">行間: <span id="lineValue">1.0</span></label><br>
+      <input type="range" id="lineSlider" min="1" max="2" step="0.1" value="1">
+
+      <h2>文字サイズスライダー</h2>
+      <label for="fontSizeSlider">文字サイズ: <span id="sizeValue">40</span>px</label><br>
+      <input type="range" id="fontSizeSlider" min="20" max="60" value="40">
+
+      <h2>フォントを選択</h2>
+      <select id="fontSelect">
+        <option value="ゴシック体, sans-serif">ゴシック体</option>
+        <option value="明朝体, serif">明朝体</option>
+        <option value="Arial, sans-serif">Arial</option>
+        <option value="Yu Gothic Medium, YuGothic, serif">UDゴシック</option>
+        <option value="Verdana, sans-serif">Verdana</option>
+      </select>
+
+      <div id="text">
+        こんにちは<br>おはよう
+      </div>
+
+      <h2>設定確認</h2>
+      <button type="button" id="showBtn">確認</button>
+      <div id="message">ここに設定内容が表示されます</div>
+
+      <h2>Firestore 登録</h2>
+      <input type="text" id="docId" placeholder="IDを入力">
+      <input type="text" id="name" placeholder="名前を入力">
+      <input type="number" id="number" placeholder="出席番号を入力">
+      <br>
+      <button type="button" id="createBtn">Firestoreに登録</button>
+    </form>
+  </div>
+
+  <!-- JavaScript (Firebase SDK不要: Flask経由API呼び出し想定) -->
+  <script>
+    const baseLine = 40;
+    const maxDiff = 20;
+
+    const text = document.getElementById("text");
+    const lineSlider = document.getElementById("lineSlider");
+    const fontSizeSlider = document.getElementById("fontSizeSlider");
+    const fontSelect = document.getElementById("fontSelect");
+    const lineValue = document.getElementById("lineValue");
+    const sizeValue = document.getElementById("sizeValue");
+    const message = document.getElementById("message");
+
+    function updateStyle() {
+      const sliderValue = Number(lineSlider.value);
+      const lineHeight = baseLine + sliderValue * maxDiff;
+      lineValue.textContent = sliderValue.toFixed(1);
+      sizeValue.textContent = fontSizeSlider.value;
+      text.style.lineHeight = lineHeight + "px";
+      text.style.fontSize = fontSizeSlider.value + "px";
+      text.style.fontFamily = fontSelect.value;
+    }
+
+    lineSlider.addEventListener("input", updateStyle);
+    fontSizeSlider.addEventListener("input", updateStyle);
+    fontSelect.addEventListener("change", updateStyle);
+    updateStyle();
+
+    document.getElementById("showBtn").addEventListener("click", () => {
+      const sliderValue = Number(lineSlider.value);
+      const fontSize = fontSizeSlider.value;
+      const fontFamily = fontSelect.value;
+      message.textContent = `フォント: ${fontFamily}\\n文字サイズ: ${fontSize}px\\n行間倍率: ${sliderValue.toFixed(1)}`;
+      message.style.display = "block";
+    });
+
+    document.getElementById("createBtn").addEventListener("click", async () => {
+      const docId = document.getElementById("docId").value.trim();
+      const name = document.getElementById("name").value.trim();
+      const number = Number(document.getElementById("number").value);
+      const lineHeight = Number(lineSlider.value);
+      const fontSize = Number(fontSizeSlider.value);
+      const fontSelectValue = fontSelect.value;
+
+      if (!docId || !name || isNaN(number)) {
+        alert("ID・名前・番号をすべて入力してください。");
+        return;
+      }
+
+      try {
+        const res = await fetch("/update_firestore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: docId, name, number, lineHeight, fontSize, fontSelect: fontSelectValue })
+        });
+        const data = await res.json();
+        alert(data.message);
+      } catch (e) {
+        alert("通信エラー: " + e.message);
+      }
+    });
+  </script>
+</body>
+</html>
+"""
+
+
 # Firestoreの情報変える生徒側へ行く
 @app.route('/edit')
-def another_page():
-    return render_template('stuSets.html')
-if not os.path.exists(font_path):
-    app.logger.warning(f"フォントファイルが見つかりません: {font_path}")
+def edit_page():
+    return HTML_EDIT
+
+
+@app.route("/update_firestore", methods=["POST"])
+def update_firestore():
+    try:
+        data = request.get_json()
+        doc_id = data.get("id")
+        if not doc_id:
+            return jsonify({"message": "IDが指定されていません"}), 400
+
+        doc_ref = db.collection("messages").document(doc_id)
+        doc_ref.set({
+            "createdAt": firestore.SERVER_TIMESTAMP, # type: ignore[attr-defined]
+            "name": data.get("name"),
+            "number": data.get("number"),
+            "lineHeight": data.get("lineHeight"),
+            "fontSize": data.get("fontSize"),
+            "fontSelect": data.get("fontSelect")
+        })
+
+        return jsonify({"message": f"Firestore更新完了: {doc_id}"})
+    except Exception as e:
+        app.logger.error(f"Firestore更新エラー: {e}")
+        return jsonify({"message": f"エラー: {str(e)}"}), 500
 
 
 # Firestoreのメッセージ取得
@@ -313,8 +480,9 @@ def create_styled_html(text_content, app_root):
             try:
                 sp = float(line.replace("[行間]", "").strip())
                 html_out += f'<div style="margin-top:{sp}px;"></div>'
-            except:
+            except Exception:
                 continue
+
         elif line.startswith("[フォント:"):
             try:
                 parts = line.split("]")
@@ -322,10 +490,11 @@ def create_styled_html(text_content, app_root):
                 size = float(parts[1].split(":")[1])
                 weight = parts[2].split(":")[1]
                 text = parts[3]
-                style = f"font-size:{size}px; font-weight:{weight};"
+                style = f"font-family:{font_name}; font-size:{size}px; font-weight:{weight};"
                 html_out += f'<p style="{style}">{html.escape(text)}</p>'
-            except:
+            except Exception:
                 continue
+
         elif line.startswith("[画像:"):
             try:
                 parts = line.strip("[]").split(":")[1:]
@@ -338,10 +507,12 @@ def create_styled_html(text_content, app_root):
                     html_out += f'<p><img src="{url}" width="{w}" height="{h}"></p>'
                 else:
                     html_out += f'<p style="color:red;">[画像なし: {path}]</p>'
-            except:
+            except Exception:
                 continue
+
         else:
             html_out += f"<p>{html.escape(line)}</p>"
+
     return html_out
 
 
@@ -370,9 +541,10 @@ def create_pdf_with_weasyprint(neo_content, output_pdf_path, app_root):
         return (False, f"WeasyPrintエラー: {e}")
 
 
-def process_pdf(pdf_path, firebase_settings=None):
+def process_pdf(pdf_path: str, firebase_settings=None):
     try:
         doc = fitz.open(pdf_path)
+        assert isinstance(doc, fitz.Document)
     except Exception as e:
         return f"PDFを開けません: {e}"
 
@@ -392,10 +564,9 @@ def process_pdf(pdf_path, firebase_settings=None):
     # OGテキスト保存
     with open(output_file_OG, "w", encoding="utf-8") as f:
         for p in doc:
-            f.write(p.get_text("text"))
+            f.write(str(p.get_text("text")))
 
     neo, sorted_txt, imgs = [], [], []
-    page_heights = [p.rect.height for p in doc]
 
     # --- ページごとの抽出 ---
     for i, page in enumerate(doc):
@@ -464,7 +635,9 @@ def process_pdf(pdf_path, firebase_settings=None):
     recreated_pdf_path = os.path.join(dir_name, recreated_pdf_filename)
     pdf_ok, _ = create_pdf_with_weasyprint(neo_content, recreated_pdf_path, app_root)
     recreated_pdf_url = os.path.join(basename, recreated_pdf_filename).replace("\\", "/") if pdf_ok else ""
-
+    if not pdf_ok:
+        download_html = "<p style='color:red;'>PDFの再構成に失敗しました。</p>"
+        
     # HTML生成用
     styled_neo_html = create_styled_html(neo_content, app_root)
     og = open(output_file_OG, encoding="utf-8").read()
