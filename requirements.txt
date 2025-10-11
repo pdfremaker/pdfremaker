@@ -4,4 +4,4 @@ werkzeug
 firebase-admin
 weasyprint
 reportlab
-gunicorn  
+gunicorn

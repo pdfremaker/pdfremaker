@@ -9,15 +9,7 @@ git push
 別にupdateのままでもおけ丸水産
 """
 
-"""
-最初にnewtab→shell
-shell内で以下を実行
-pip install flask pymupdf firebase-admin reportlab weasyprint
-pip uninstall fitz
-"""
-
-print("(;^ω^)起動中...")
-
+# Import the necessary modules
 from flask import Flask, request, render_template_string, jsonify, render_template, send_file
 import os
 import fitz  # PyMuPDF
@@ -26,14 +18,15 @@ import html
 import firebase_admin
 from firebase_admin import credentials, firestore
 import json
-
-# --- WeasyPrintのモジュールをインポート ---
 from weasyprint import HTML
 from weasyprint.urls import path2url  # ローカルファイルのパスをURLに変換するために必要
-
-#要確認のimport類
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from typing import Optional, Dict, Any
+
+# プログラム起動のあいさつ
+print("(;^ω^)起動中...")
+print("DEBUG: fitz module path:", getattr(fitz, "__file__", None))
 
 # まず関数を定義
 app_root = os.path.dirname(os.path.abspath(__file__))
@@ -61,12 +54,6 @@ def get_font_path(app_root, font_family_name="IPAexGothic"):
 # 関数を呼び出す
 app_root = os.path.dirname(os.path.abspath(__file__))
 font_path = get_font_path(app_root, "IPAexGothic")
-
-
- # ←これを追加！
-from weasyprint.urls import path2url
-
-
 font_url = path2url(font_path)
 
 # Firebaseを初期化
@@ -262,22 +249,29 @@ def upload_pdf():
     if request.method == "POST":
         if "file" not in request.files or not request.files["file"].filename:
             return "ファイルが選択されていません。"
+
         uploaded_file = request.files["file"]
+        filename = uploaded_file.filename or ""  # None対策
+
         student_id = request.form.get("student_id", "").strip()
+        firebase_settings = None  # 未定義エラー防止の初期化
+
         if student_id:
             firebase_settings = get_document("messages", student_id)
             if firebase_settings:
                 app.logger.info(f"ID '{student_id}' の設定を適用します: {firebase_settings}")
             else:
                 app.logger.info(f"ID '{student_id}' は見つかりませんでした。デフォルト設定で処理します。")
-        if uploaded_file and uploaded_file.filename.endswith(".pdf"):
-            filename = secure_filename(uploaded_file.filename)
+
+        if filename.lower().endswith(".pdf"):
+            filename = secure_filename(filename)
             filepath = os.path.join(UPLOAD_FOLDER, filename)
             uploaded_file.save(filepath)
-            result_html = process_pdf(filepath, firebase_settings)  # firebase_settingsを渡す
+            result_html = process_pdf(filepath, firebase_settings)
             return result_html
         else:
             return "PDFファイルをアップロードしてください。"
+
     return render_template_string(HTML_FORM)
 
 
@@ -313,9 +307,6 @@ def serve_output_file(filepath):
 # --- 改良後 ---
 # --- 変更後 ---
 def create_pdf_with_weasyprint(neo_content, output_pdf_path, app_root, firebase_settings=None):
-    from weasyprint import HTML
-    from weasyprint.urls import path2url
-
     # Firestore設定の反映
     font_family_name = firebase_settings.get("fontSelect", "IPAexGothic") if firebase_settings else "IPAexGothic"
     font_size = float(firebase_settings.get("fontSize", 1.0)) if firebase_settings else 1.0
@@ -447,10 +438,14 @@ def create_styled_html(text_content, app_root):
     return styled_html
 
 
-def process_pdf(pdf_path, firebase_settings=None):
+def process_pdf(pdf_path: str, firebase_settings: Optional[Dict[str, Any]] = None) -> str:
+    """
+    PDFを分解・再構成し、解析結果をHTMLで返す関数。
+    firebase_settings に基づきフォントやサイズを適用。
+    """
     try:
-        # fitz.Document(pdf_path) ではなく、fitz.open(pdf_path) を再度使用
-        doc = fitz.open(pdf_path)
+        # fitz.open() に type: ignore を追加してPyright警告を無効化
+        doc = fitz.open(pdf_path)  # type: ignore
     except Exception as e:
         return f"PDFファイルを開けませんでした: {e}"
 
@@ -458,47 +453,41 @@ def process_pdf(pdf_path, firebase_settings=None):
     dir_name = os.path.join(OUTPUT_FOLDER, basename)
     os.makedirs(dir_name, exist_ok=True)
 
-    fs_font_override = firebase_settings.get(
-        'fontSelect') if firebase_settings else None
-    fs_size_add = float(firebase_settings.get('fontSize',
-                                              0)) if firebase_settings else 0.0
-    fs_line_height_add = float(firebase_settings.get(
-        'lineHeight', 0)) if firebase_settings else 0.0
+    # --- Firebase設定を取得 ---
+    fs_font_override = firebase_settings.get("fontSelect") if firebase_settings else None
+    fs_size_add = float(firebase_settings.get("fontSize", 0)) if firebase_settings else 0.0
+    fs_line_height_add = float(firebase_settings.get("lineHeight", 0)) if firebase_settings else 0.0 # noqa #加える行間のデータ
 
+    # --- 出力ファイルパス ---
     output_file_OG = os.path.join(dir_name, f"{basename}_OG.txt")
     output_file_NEO = os.path.join(dir_name, f"{basename}_NEO.txt")
     output_file_SORTED = os.path.join(dir_name, f"{basename}_SORTED.txt")
 
+    # --- OGテキスト抽出 ---
     with open(output_file_OG, "w", encoding="utf-8") as f:
-        for page in doc:
+        for page in doc:  # type: ignore
             f.write(page.get_text("text"))
 
     neo_content_lines = []
     sorted_content_lines = []
     image_urls = []
+    page_heights = [page.rect.height for page in doc]  # type: ignore
 
-    # --- 新しいシステム：テキストと画像を時系列で分解 ---
-    page_heights = [page.rect.height for page in doc]
-
-    for page_num in range(len(doc)):
-        page = doc.load_page(page_num)
-
+    for page_num, page in enumerate(doc):  # type: ignore
         sorted_content_lines.append(f"\n--- Page {page_num + 1} ---\n")
 
-        # テキストブロックと画像を抽出
+        # --- テキストブロック＆画像抽出 ---
         text_blocks = page.get_text("dict")["blocks"]
         images = page.get_images(full=True)
-
         page_elements = []
 
-        # テキストブロックの情報をリストに追加
+        # --- テキスト抽出 ---
         for block in text_blocks:
-            if block["type"] == 0:  # テキストブロックのみ
+            if block["type"] == 0:  # テキストのみ
                 text_content = ""
                 for line in block["lines"]:
                     for span in line["spans"]:
                         text_content += span["text"]
-
                 if text_content.strip():
                     page_elements.append({
                         "type": "text",
@@ -506,37 +495,36 @@ def process_pdf(pdf_path, firebase_settings=None):
                         "content": text_content.strip()
                     })
 
-        # 画像の情報をリストに追加
+        # --- 画像抽出 ---
         for i, img in enumerate(images):
-            xref = img[0]
-
-            # 画像をファイルとして保存
             try:
-                pix = fitz.Pixmap(doc, xref)
+                xref = img[0]
+                pix = fitz.Pixmap(doc, xref)  # type: ignore
                 img_filename = f"image_p{page_num+1}_idx{i}.png"
                 img_path_full = os.path.join(dir_name, img_filename)
+
                 if pix.n >= 5:
-                    pix = fitz.Pixmap(fitz.csRGB, pix)
+                    pix = fitz.Pixmap(fitz.csRGB, pix)  # type: ignore
                 pix.save(img_path_full)
-                relative_path = os.path.join(basename,
-                                             img_filename).replace('\\', '/')
+
+                relative_path = os.path.join(basename, img_filename).replace("\\", "/")
                 image_urls.append(relative_path)
+
+                bbox_info = page.get_image_info(xref)
+                bbox = bbox_info[0]["bbox"] if bbox_info else [0, 0, 0, 0]
+
+                page_elements.append({
+                    "type": "image",
+                    "bbox": bbox,
+                    "content": img_path_full
+                })
             except Exception as e:
-                print(f"ページの画像抽出に失敗しました: {e}")
-                continue
+                print(f"⚠️ ページ{page_num+1}の画像抽出に失敗: {e}")
 
-            # 要素リストに画像情報を追加
-            bbox = page.get_image_info(xref)[0]["bbox"]
-            page_elements.append({
-                "type": "image",
-                "bbox": bbox,
-                "content": img_path_full
-            })
-
-        # 要素をY座標（上から下）でソート
-        # Y座標 (上から下) を優先し、同じY座標内では X座標 (左から右) でソートする
+        # --- ソート（上→下、左→右） ---
         page_elements.sort(key=lambda x: (x["bbox"][1], x["bbox"][0]))
-        # ソートされた要素をリストに格納し、NEOコンテンツを構築
+
+        # --- 行間計算＋NEO構築 ---
         previous_y = None
         for element in page_elements:
             current_y = element["bbox"][1]
@@ -546,39 +534,35 @@ def process_pdf(pdf_path, firebase_settings=None):
                     neo_content_lines.append(f"[行間]{spacing:.2f}\n")
 
             if element["type"] == "text":
-                text_content = element['content']
-                # NEO形式のメタ情報を設定
-                font_name_str = fs_font_override if fs_font_override else "IPAexGothic, sans-serif"
+                text_content = element["content"]
+                font_name = fs_font_override or "IPAexGothic, sans-serif"
+                final_font_size = 12.0 + fs_size_add
+                weight = "bold" if "bold" in text_content.lower() else "normal"
 
-                final_font_size = 12.00 + fs_size_add
-                weight = "normal"
-                if "bold" in text_content.lower():
-                    weight = "bold"  # シンプルな太字判定
-                font_name_str = fs_font_override if fs_font_override else "IPAexGothic, sans-serif"
-                final_font_size = 12.00 + fs_size_add
-                weight = "normal"
-                if "bold" in text_content.lower():
-                    weight = "bold"  # 簡易的に太字判定
-                neo_line = f"[フォント:{font_name_str}][サイズ:{final_font_size:.2f}][ウェイト:{weight}]{text_content}\n"
-
-
+                neo_line = (
+                    f"[フォント:{font_name}]"
+                    f"[サイズ:{final_font_size:.2f}]"
+                    f"[ウェイト:{weight}]{text_content}\n"
+                )
                 neo_content_lines.append(neo_line)
                 sorted_content_lines.append(f"テキスト: {text_content}\n\n")
                 previous_y = element["bbox"][3]
+
+            # 画像抽出
             elif element["type"] == "image":
                 bbox = element["bbox"]
-
-                img_path_full = element['content']
-                img_width = bbox[2] - bbox[0]
-                img_height = bbox[3] - bbox[1]
-
+                # ReportLabや座標再配置向けに Y 座標を計算
                 img_y_reportlab = page_heights[page_num] - bbox[3]
-                neo_image_tag = f"[画像:{img_path_full}:{bbox[0]:.2f}:{bbox[1]:.2f}:{img_width:.2f}:{img_height:.2f}]\n"
-                neo_content_lines.append(neo_image_tag)
-                sorted_content_lines.append(
-                    f"[画像] {element['content']} | BBOX: {bbox}\n\n")
+                neo_line = (
+                    f"[画像:{element['content']}:"
+                    f"{bbox[0]:.2f}:{img_y_reportlab:.2f}:"
+                    f"{bbox[2]-bbox[0]:.2f}:{bbox[3]-bbox[1]:.2f}]\n"
+                )
+                neo_content_lines.append(neo_line)
+                sorted_content_lines.append(f"[画像] {element['content']} | BBOX: {bbox}\n\n")
                 previous_y = bbox[3]
 
+    # --- テキストファイル出力 ---
     neo_content = "".join(neo_content_lines)
     sorted_content = "".join(sorted_content_lines)
 
@@ -587,92 +571,90 @@ def process_pdf(pdf_path, firebase_settings=None):
     with open(output_file_SORTED, "w", encoding="utf-8") as f:
         f.write(sorted_content)
 
-    # --- ファイルの内容を読み込みます ---
+    # --- OG読み込み ---
     try:
         with open(output_file_OG, "r", encoding="utf-8") as f:
             og_content = f.read()
     except FileNotFoundError:
         og_content = "OGテキストファイルの読み込みに失敗しました。"
 
+    # --- PDF再構成 ---
     recreated_pdf_filename = f"{basename}_recreated.pdf"
     recreated_pdf_path = os.path.join(dir_name, recreated_pdf_filename)
+    pdf_created_successfully, _ = create_pdf_with_weasyprint(
+        neo_content, recreated_pdf_path, app_root, firebase_settings
+    )
+    recreated_pdf_url = (
+        os.path.join(basename, recreated_pdf_filename).replace("\\", "/")
+        if pdf_created_successfully else ""
+    )
 
-    pdf_created_successfully, error_msg = create_pdf_with_weasyprint(
-        neo_content, recreated_pdf_path, app_root, firebase_settings)
-    recreated_pdf_url = ""
-    if pdf_created_successfully:
-        recreated_pdf_url = os.path.join(basename,
-                                         recreated_pdf_filename).replace(
-                                             '\\', '/')
+    # --- HTML生成 ---
+    styled_neo_html = create_styled_html(neo_content, app_root)
+    og_safe = html.escape(og_content)
+    neo_safe = html.escape(neo_content)
+    sorted_safe = html.escape(sorted_content)
 
-    styled_neo_content_html = create_styled_html(neo_content, app_root)
-    og_content_safe = html.escape(og_content)
-    neo_content_safe = html.escape(neo_content)
-    sorted_content_safe = html.escape(sorted_content)
-
-    # 画像ギャラリーHTMLを再構築
-    image_gallery_html = ""
-    if image_urls:
-        for url in image_urls:
-            image_gallery_html += f'<a href="/outputs/{html.escape(url)}" target="_blank"><img src="/outputs/{html.escape(url)}" alt="image"></a>'
-    else:
-        image_gallery_html = "<p>画像は抽出されませんでした。</p>"
+    image_gallery_html = "".join(
+        f'<a href="/outputs/{html.escape(url)}" target="_blank">'
+        f'<img src="/outputs/{html.escape(url)}" alt="image"></a>'
+        for url in image_urls
+    ) or "<p>画像は抽出されませんでした。</p>"
 
     download_html = ""
     if pdf_created_successfully:
-        download_url = f"/outputs/{html.escape(recreated_pdf_url)}"
-        download_html = f'''<div class="download-section"><h3>再構成されたPDF</h3><a href="{download_url}" class="action-link" download>ダウンロード</a></div>'''
+        download_html = (
+            f'<div class="download-section">'
+            f'<h3>再構成されたPDF</h3>'
+            f'<a href="/outputs/{html.escape(recreated_pdf_url)}" '
+            f'class="action-link" download>ダウンロード</a></div>'
+        )
 
     doc.close()
 
-    # result_html = f"""のfは超重要（ないと動かないよ）
+    # --- 最終HTML ---
     result_html = f"""
     <!doctype html>
     <html lang="ja">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>処理結果</title>
-            <style>
-                body {{ font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; margin: 0; background-color: #f4f4f9; }}
-                .container {{ max-width: 960px; margin: 2em auto; padding: 2em; background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
-                h2 {{ border-bottom: 2px solid #007bff; padding-bottom: 10px; color: #333; }}
-                .content-box {{ border: 1px solid #ddd; background-color: #fdfdfd; padding: 1em; margin-top: 1em; white-space: pre-wrap; word-wrap: break-word; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 14px; }}
-                .styled-content-box {{ border: 1px solid #ddd; background-color: #fdfdfd; padding: 1em; margin-top: 1em; max-height: 400px; overflow-y: auto; }}
-                details {{ border: 1px solid #ccc; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; background-color: #f9f9f9; }}
-                summary {{ font-weight: bold; cursor: pointer; padding: 0.5em; font-size: 1.1em; color: #0056b3; }}
-                .info, .download-section {{ background: #eef; padding: 1em; border-radius: 8px; margin-bottom: 1.5em; }}
-                .image-gallery {{ display: flex; flex-wrap: wrap; gap: 15px; padding: 1em; }}
-                .image-gallery img {{ border: 2px solid #ddd; border-radius: 5px; padding: 5px; max-width: 150px; height: auto; cursor: pointer; transition: transform 0.2s; }}
-                .image-gallery img:hover {{ transform: scale(1.05); border-color: #007bff; }}
-                .action-link {{ display: inline-block; margin-top: 1em; background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; }}
-                .action-link:hover {{ background-color: #218838; }}
-                .back-link {{ background-color: #6c757d; }}
-                .back-link:hover {{ background-color: #5a6268; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>処理完了！</h2>
-                <div class="info">
-                    <p><strong>処理対象ファイル:</strong> {html.escape(os.path.basename(pdf_path))}</p>
-                    <p><strong>保存先フォルダ:</strong> {html.escape(os.path.abspath(dir_name))}</p>
-                </div>
-                {download_html}
-                <details><summary>スタイルが適用されたNEOテキスト (プレビュー)</summary><div class="styled-content-box">{styled_neo_content_html}</div></details>
-                <details><summary>NEO テキスト (サイズ・フォント・ウェイト情報付き)</summary><div class="content-box">{neo_content_safe}</div></details>
-                <details><summary>OG テキスト (純粋な本文)</summary><div class="content-box">{og_content_safe}</div></details>
-                <details><summary>時系列で並べ替えられたテキストと画像の情報</summary><div class="content-box">{html.escape(sorted_content)}</div></details> 
-                <details open>
-                    <summary>抽出された画像 ({len(image_urls)}枚)</summary>
-                    <div class="image-gallery">{image_gallery_html}</div>
-                </details>
-               <a href="/" class="action-link back-link">別のファイルを処理する</a>
+    <head>
+        <meta charset="UTF-8">
+        <title>処理結果</title>
+        <style>
+            body {{ font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; background-color: #f4f4f9; }}
+            .container {{ max-width: 960px; margin: 2em auto; padding: 2em; background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            h2 {{ border-bottom: 2px solid #007bff; color: #333; }}
+            .content-box {{ border: 1px solid #ddd; padding: 1em; margin-top: 1em; background: #fdfdfd; max-height: 400px; overflow-y: auto; font-family: monospace; }}
+            .styled-content-box {{ border: 1px solid #ddd; padding: 1em; margin-top: 1em; max-height: 400px; overflow-y: auto; }}
+            details {{ border: 1px solid #ccc; border-radius: 5px; padding: 0.5em; background: #f9f9f9; }}
+            summary {{ font-weight: bold; cursor: pointer; color: #0056b3; }}
+            .info, .download-section {{ background: #eef; padding: 1em; border-radius: 8px; margin-bottom: 1.5em; }}
+            .image-gallery {{ display: flex; flex-wrap: wrap; gap: 15px; }}
+            .image-gallery img {{ border: 2px solid #ddd; border-radius: 5px; max-width: 150px; transition: transform 0.2s; }}
+            .image-gallery img:hover {{ transform: scale(1.05); border-color: #007bff; }}
+            .action-link {{ display: inline-block; margin-top: 1em; background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; }}
+            .back-link {{ background-color: #6c757d; }}
+            .action-link:hover {{ background-color: #218838; }}
+            .back-link:hover {{ background-color: #5a6268; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>処理完了！</h2>
+            <div class="info">
+                <p><strong>処理対象ファイル:</strong> {html.escape(os.path.basename(pdf_path))}</p>
+                <p><strong>保存先フォルダ:</strong> {html.escape(os.path.abspath(dir_name))}</p>
             </div>
-        </body>
+            {download_html}
+            <details><summary>スタイル付きNEOプレビュー</summary><div class="styled-content-box">{styled_neo_html}</div></details>
+            <details><summary>NEOテキスト</summary><div class="content-box">{neo_safe}</div></details>
+            <details><summary>OGテキスト</summary><div class="content-box">{og_safe}</div></details>
+            <details><summary>時系列ソート</summary><div class="content-box">{sorted_safe}</div></details>
+            <details open><summary>抽出画像 ({len(image_urls)}枚)</summary><div class="image-gallery">{image_gallery_html}</div></details>
+            <a href="/" class="action-link back-link">別のファイルを処理する</a>
+        </div>
+    </body>
     </html>
     """
-    # この行のインデントを修正
     return result_html
 
 
