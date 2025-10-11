@@ -5,6 +5,8 @@ pip install flask pymupdf firebase-admin reportlab weasyprint
 pip uninstall fitz
 """
 
+print("(;^ω^)起動中...")
+
 from flask import Flask, request, render_template_string, jsonify, render_template, send_file
 import os
 import fitz  # PyMuPDF
