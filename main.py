@@ -33,11 +33,22 @@ app_root = os.path.dirname(os.path.abspath(__file__))
 
 # フォント情報の設定
 FONT_FILE_MAP = {
-    "明朝体, serif": "ipaexm.ttf",
-    "IPAex明朝": "ipaexm.ttf",
-    "IPAexゴシック": "ipaexg.ttf",
-    "ゴシック体, sans-serif": "ipaexg.ttf",
-    "Verdana, sans-serif": "ipaexg.ttf",  # 代替としてIPAexゴシック
+    # 教科書体に近い読みやすさ（明朝系）
+    "Noto Serif JP": "fonts/NotoSerifJP-Regular.ttf",
+    "明朝体, serif": "fonts/NotoSerifJP-Regular.ttf",
+    "IPAex明朝": "fonts/ipaexg.ttf",  # fallback（代用：明朝もIPAexに）
+
+    # 読みやすいゴシック（標準・ベース）
+    "Noto Sans JP": "fonts/NotoSansJP-Regular.ttf",
+    "ゴシック体, sans-serif": "fonts/NotoSansJP-Regular.ttf",
+    "IPAexゴシック": "fonts/ipaexg.ttf",  # fallback
+
+    # 優しい丸ゴシック（読み障がい支援向け）
+    "Kosugi Maru": "fonts/KosugiMaru-Regular.ttf",
+
+    # 英字・軽量フォントの代替
+    "Verdana, sans-serif": "fonts/NotoSansJP-Regular.ttf",
+    "Arial, sans-serif": "fonts/NotoSansJP-Regular.ttf"
 }
 
 
@@ -265,11 +276,12 @@ HTML_EDIT = """
 
       <h2>フォントを選択</h2>
       <select id="fontSelect">
-        <option value="ゴシック体, sans-serif">ゴシック体</option>
-        <option value="明朝体, serif">明朝体</option>
-        <option value="Arial, sans-serif">Arial</option>
-        <option value="Yu Gothic Medium, YuGothic, serif">UDゴシック</option>
-        <option value="Verdana, sans-serif">Verdana</option>
+        <option value="Noto Sans JP">ゴシック</option>
+        <option value="Noto Serif JP">明朝</option>
+        <option value="Kosugi Maru">丸ゴシック</option>
+        <option value="IPAexゴシック">IPAexゴシック</option>
+        <option value="IPAex明朝">IPAex明朝</option>
+        <option value="Verdana, sans-serif">Verdana（代替英字フォント）</option>
       </select>
 
       <div id="text">
