@@ -23,7 +23,6 @@ from weasyprint.urls import path2url  # ローカルファイルのパスをURL�
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
-
 # プログラム起動のあいさつ
 print("(;^ω^)起動中...")
 print(f"DEBUG: fitz module path: {fitz.__file__}")
@@ -41,6 +40,7 @@ FONT_FILE_MAP = {
     "Verdana, sans-serif": "ipaexg.ttf",  # 代替としてIPAexゴシック
 }
 
+
 def get_font_path(app_root, font_family_name="IPAexGothic"):
     font_file = FONT_FILE_MAP.get(font_family_name, "ipaexg.ttf")
     font_path = os.path.join(app_root, font_file)
@@ -49,6 +49,7 @@ def get_font_path(app_root, font_family_name="IPAexGothic"):
         print(f"⚠️ フォントファイルが存在しません: {font_path}")
         font_path = os.path.join(app_root, "ipaexg.ttf")
     return font_path
+
 
 # 関数を呼び出す
 app_root = os.path.dirname(os.path.abspath(__file__))
@@ -62,7 +63,8 @@ try:
         cred_dict = json.loads(cred_json)
         cred = credentials.Certificate(cred_dict)
     else:
-        cred = credentials.Certificate(os.path.join(app_root, "serAccoCaMnFv.json"))
+        cred = credentials.Certificate(
+            os.path.join(app_root, "serAccoCaMnFv.json"))
     firebase_admin.initialize_app(cred)
     db = firestore.client()
 except Exception as e:
@@ -171,47 +173,34 @@ HTML_FORM = """
             <input type=submit value="アップロードして処理">
         </form>
     </div>
-
     <script>
-    document.getElementById("fetch-button").addEventListener("click", async function() {
-        const id = document.getElementById("student-id").value;
-        if (!id) {
-            alert("生徒IDを入力してください。");
-            return;
-        }
-        const res = await fetch(`/get_message?id=${encodeURIComponent(id)}`);
-        const data = await res.json();
-        const div = document.getElementById("student-info");
-
-        if (data.error) {
-            div.innerHTML = `<p style="color:red;">${data.error}</p>`;
-        } else {
-            div.innerHTML = `
-                <h3>現在の生徒設定情報（加算値）</h3>
-                <p><strong>ID:</strong> ${data.id}</p>
-                <p><strong>フォント（上書き）:</strong> ${data.fontSelect}</p>
-                <p><strong>文字サイズ（追加）:</strong> +${data.fontSize}</p>
-                <p><strong>行間（追加）:</strong> +${data.lineHeight}</p>
-                <p style="color:green; font-weight:bold;">設定が確認できました。ファイルをアップロードしてください。</p>`;
-        }
-    });
-        const res = await fetch(`/get_message?id=${encodeURIComponent(id)}`);
-        const data = await res.json();
-        const div = document.getElementById("student-info");
-
-        if (data.error) {
-            div.innerHTML = `<p style="color:red;">${data.error}</p>`;
-        } else {
-            div.innerHTML = `
-                <h3>現在の生徒設定情報（加算値）</h3>
-                <p><strong>ID:</strong> ${data.id}</p>
-                <p><strong>フォント（上書き）:</strong> ${data.fontSelect}</p>
-                <p><strong>文字サイズ（追加）:</strong> +${data.fontSize}</p>
-                <p><strong>行間（追加）:</strong> +${data.lineHeight}</p>
-                <p style="color:green; font-weight:bold;">設定が確認できました。ファイルをアップロードしてください。</p>`;
-        }
-    });
-
+        document.getElementById("fetch-button").addEventListener("click", async function() {
+            const id = document.getElementById("student-id").value.trim();
+            if (!id) {
+                alert("生徒IDを入力してください。");
+                return;
+            }
+    
+            try {
+                const res = await fetch(`/get_message?id=${encodeURIComponent(id)}`);
+                const data = await res.json();
+                const div = document.getElementById("student-info");
+    
+                if (data.error) {
+                    div.innerHTML = `<p style="color:red;">${data.error}</p>`;
+                } else {
+                    div.innerHTML = `
+                        <h3>現在の生徒設定情報（加算値）</h3>
+                        <p><strong>ID:</strong> ${data.id}</p>
+                        <p><strong>フォント（上書き）:</strong> ${data.fontSelect}</p>
+                        <p><strong>文字サイズ（追加）:</strong> +${data.fontSize}</p>
+                        <p><strong>行間（追加）:</strong> +${data.lineHeight}</p>
+                        <p style="color:green; font-weight:bold;">設定が確認できました。ファイルをアップロードしてください。</p>`;
+                }
+            } catch (e) {
+                alert("通信エラー: " + e.message);
+            }
+        });
     </script>
 </body>
 </html>
@@ -383,7 +372,8 @@ def update_firestore():
 
         doc_ref = db.collection("messages").document(doc_id)
         doc_ref.set({
-            "createdAt": firestore.SERVER_TIMESTAMP, # type: ignore[attr-defined]
+            "createdAt":
+            firestore.SERVER_TIMESTAMP,  # type: ignore[attr-defined]
             "name": data.get("name"),
             "number": data.get("number"),
             "lineHeight": data.get("lineHeight"),
@@ -427,9 +417,11 @@ def upload_pdf():
         if student_id:
             firebase_settings = get_document("messages", student_id)
             if firebase_settings:
-                app.logger.info(f"ID '{student_id}' の設定を適用します: {firebase_settings}")
+                app.logger.info(
+                    f"ID '{student_id}' の設定を適用します: {firebase_settings}")
             else:
-                app.logger.info(f"ID '{student_id}' は見つかりませんでした。デフォルト設定で処理します。")
+                app.logger.info(
+                    f"ID '{student_id}' は見つかりませんでした。デフォルト設定で処理します。")
 
         if filename.lower().endswith(".pdf"):
             filename = secure_filename(filename)
@@ -516,32 +508,65 @@ def create_styled_html(text_content, app_root):
     return html_out
 
 
-def create_pdf_with_weasyprint(neo_content, output_pdf_path, app_root):
+def create_pdf_with_weasyprint(neo_content,
+                               output_pdf_path,
+                               app_root,
+                               firebase_settings=None):
     try:
         html_body = create_styled_html(neo_content, app_root)
+
+        # --- Firestore 設定がある場合は反映 ---
+        font_family = "IPAexGothic"
+        font_size = "12pt"
+        line_height = "1.6"
+
+        if firebase_settings:
+            # フォント指定
+            if firebase_settings.get("fontSelect"):
+                font_family = firebase_settings["fontSelect"]
+
+            # フォントサイズ
+            if firebase_settings.get("fontSize"):
+                try:
+                    font_size = f"{float(firebase_settings['fontSize']):.1f}pt"
+                except Exception:
+                    pass
+
+            # 行間
+            if firebase_settings.get("lineHeight"):
+                try:
+                    line_height = str(float(firebase_settings["lineHeight"]))
+                except Exception:
+                    pass
+
+        # IPAexGothic フォント設定
         font_file_path = os.path.join(app_root, "ipaexg.ttf")
         if not os.path.exists(font_file_path):
             return (False, "フォントファイル 'ipaexg.ttf' が見つかりません。")
 
         font_url = path2url(font_file_path)
+
         css = f"""
         @font-face {{
             font-family: 'IPAexGothic';
             src: url('{font_url}');
         }}
         body {{
-            font-family: 'IPAexGothic', sans-serif;
-            font-size: 12pt;
-            line-height: 1.6;
+            font-family: '{font_family}', 'IPAexGothic', sans-serif;
+            font-size: {font_size};
+            line-height: {line_height};
         }}
         """
-        HTML(string=f"<style>{css}</style>{html_body}", base_url=app_root).write_pdf(output_pdf_path)
+
+        HTML(string=f"<style>{css}</style>{html_body}",
+             base_url=app_root).write_pdf(output_pdf_path)
         return (True, None)
+
     except Exception as e:
         return (False, f"WeasyPrintエラー: {e}")
 
 
-def process_pdf(pdf_path: str, firebase_settings=None):
+def process_pdf(pdf_path, firebase_settings=None):
     try:
         doc = fitz.open(pdf_path)
         assert isinstance(doc, fitz.Document)
@@ -553,8 +578,10 @@ def process_pdf(pdf_path: str, firebase_settings=None):
     os.makedirs(dir_name, exist_ok=True)
 
     # Firebase設定
-    fs_font_override = firebase_settings.get('fontSelect') if firebase_settings else None
-    fs_size_add = float(firebase_settings.get('fontSize', 0)) if firebase_settings else 0.0
+    fs_font_override = firebase_settings.get(
+        'fontSelect') if firebase_settings else None
+    fs_size_add = float(firebase_settings.get('fontSize',
+                                              0)) if firebase_settings else 0.0
 
     # 出力ファイルパス
     output_file_OG = os.path.join(dir_name, f"{basename}_OG.txt")
@@ -576,9 +603,14 @@ def process_pdf(pdf_path: str, firebase_settings=None):
         # テキスト抽出
         for blk in page.get_text("dict")["blocks"]:
             if blk["type"] == 0:
-                text = "".join(span["text"] for ln in blk["lines"] for span in ln["spans"]).strip()
+                text = "".join(span["text"] for ln in blk["lines"]
+                               for span in ln["spans"]).strip()
                 if text:
-                    elements.append({"type": "text", "bbox": blk["bbox"], "content": text})
+                    elements.append({
+                        "type": "text",
+                        "bbox": blk["bbox"],
+                        "content": text
+                    })
 
         # 画像抽出
         for j, img in enumerate(page.get_images(full=True)):
@@ -593,7 +625,11 @@ def process_pdf(pdf_path: str, firebase_settings=None):
                 rel = os.path.join(basename, name).replace("\\", "/")
                 imgs.append(rel)
                 bbox = page.get_image_info(xref)[0]["bbox"]
-                elements.append({"type": "image", "bbox": bbox, "content": full})
+                elements.append({
+                    "type": "image",
+                    "bbox": bbox,
+                    "content": full
+                })
             except Exception as e:
                 print("画像抽出失敗:", e)
 
@@ -612,12 +648,15 @@ def process_pdf(pdf_path: str, firebase_settings=None):
                 text = el["content"]
                 font = fs_font_override or "IPAexGothic, sans-serif"
                 size = 12.0 + fs_size_add
-                neo.append(f"[フォント:{font}][サイズ:{size:.2f}][ウェイト:normal]{text}\n")
+                neo.append(
+                    f"[フォント:{font}][サイズ:{size:.2f}][ウェイト:normal]{text}\n")
                 sorted_txt.append(f"テキスト: {text}\n")
                 prev_y = el["bbox"][3]
             elif el["type"] == "image":
                 bbox = el["bbox"]
-                neo.append(f"[画像:{el['content']}:{bbox[0]:.2f}:{bbox[1]:.2f}:{bbox[2]-bbox[0]:.2f}:{bbox[3]-bbox[1]:.2f}]\n")
+                neo.append(
+                    f"[画像:{el['content']}:{bbox[0]:.2f}:{bbox[1]:.2f}:{bbox[2]-bbox[0]:.2f}:{bbox[3]-bbox[1]:.2f}]\n"
+                )
                 sorted_txt.append(f"[画像] {el['content']} | BBOX: {bbox}\n\n")
                 prev_y = bbox[3]
 
@@ -633,11 +672,15 @@ def process_pdf(pdf_path: str, firebase_settings=None):
     # PDF生成
     recreated_pdf_filename = f"{basename}_recreated.pdf"
     recreated_pdf_path = os.path.join(dir_name, recreated_pdf_filename)
-    pdf_ok, _ = create_pdf_with_weasyprint(neo_content, recreated_pdf_path, app_root)
-    recreated_pdf_url = os.path.join(basename, recreated_pdf_filename).replace("\\", "/") if pdf_ok else ""
+    pdf_ok, _ = create_pdf_with_weasyprint(neo_content,
+                                           recreated_pdf_path,
+                                           app_root,
+                                           firebase_settings=firebase_settings)
+    recreated_pdf_url = os.path.join(basename, recreated_pdf_filename).replace(
+        "\\", "/") if pdf_ok else ""
     if not pdf_ok:
         download_html = "<p style='color:red;'>PDFの再構成に失敗しました。</p>"
-        
+
     # HTML生成用
     styled_neo_html = create_styled_html(neo_content, app_root)
     og = open(output_file_OG, encoding="utf-8").read()
@@ -645,14 +688,12 @@ def process_pdf(pdf_path: str, firebase_settings=None):
     image_gallery_html = "".join(
         f'<a href="/outputs/{html.escape(url)}" target="_blank">'
         f'<img src="/outputs/{html.escape(url)}" alt="image"></a>'
-        for url in imgs
-    ) or "<p>画像は抽出されませんでした。</p>"
+        for url in imgs) or "<p>画像は抽出されませんでした。</p>"
 
     download_html = (
         f'<div class="download-section"><h3>再構成されたPDF</h3>'
         f'<a href="/outputs/{html.escape(recreated_pdf_url)}" class="action-link" download>ダウンロード</a></div>'
-        if pdf_ok else ""
-    )
+        if pdf_ok else "")
 
     # --- 見た目統合版HTML出力 ---
     result_html = f"""
