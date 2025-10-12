@@ -1,9 +1,12 @@
-[フォント:明朝体, serif][サイズ:22.00][ウェイト:normal]あああああああああああああ
-[行間]24.18
-[画像:/home/runner/workspace/output/pdf/image_p1_0.png:120.00:149.25:168.75:168.75]
-[フォント:明朝体, serif][サイズ:22.00][ウェイト:normal]いいいいいいいいいいいいいいいいいいいいいいいいいいいい
-[フォント:明朝体, serif][サイズ:22.00][ウェイト:normal]いいいいいい、。・￥￥：」＠「ー＾,.¥/
-[行間]2.38
-[フォント:明朝体, serif][サイズ:22.00][ウェイト:normal]・saaaしｆｋｊｌ；
-[行間]4.37
-[フォント:明朝体, serif][サイズ:22.00][ウェイト:normal]ああ
+[フォント:Yu Gothic Medium, YuGothic, serif][サイズ:68.00][ウェイト:normal]フォントサイズ８​
+[行間]0.82
+[フォント:Yu Gothic Medium, YuGothic, serif][サイズ:87.00][ウェイト:normal]あああああああああああああ
+[行間]54.97
+[画像:/home/runner/workspace/output/pdf/image_p1_0.png:121.50:163.12:168.75:168.75]
+[行間]72.33
+[フォント:Yu Gothic Medium, YuGothic, serif][サイズ:81.77][ウェイト:normal]いいいいいいいいいいいいいいいいいいいいいいいいい
+[フォント:Yu Gothic Medium, YuGothic, serif][サイズ:81.77][ウェイト:normal]いいい いいいいいい、。・￥￥：」＠「ー＾,.¥/
+[行間]29.85
+[フォント:Yu Gothic Medium, YuGothic, serif][サイズ:81.77][ウェイト:normal]・saaaしｆｋｊｌ；
+[行間]8.35
+[フォント:Yu Gothic Medium, YuGothic, serif][サイズ:81.77][ウェイト:normal]ああ

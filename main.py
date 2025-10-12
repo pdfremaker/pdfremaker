@@ -464,13 +464,37 @@ def serve_output_file(filepath):
         return f"ファイル送信中にエラーが発生しました: {e}", 500
 
 
-def create_styled_html(text_content, app_root):
+def create_styled_html(text_content, app_root, firebase_settings=None):
+    """
+    NEOテキストをHTMLに変換し、Firestore設定（fontSize加算 / lineHeight倍率）を反映して出力。
+    """
     lines = text_content.strip().split("\n")
     html_out = ""
+
+    # --- Firestore設定値を取得 ---
+    font_size_add = 0.0
+    line_height_factor = 1.0
+    font_override = None
+
+    if firebase_settings:
+        try:
+            font_size_add = float(firebase_settings.get("fontSize", 0.0))
+        except Exception:
+            font_size_add = 0.0
+        try:
+            line_height_factor = float(firebase_settings.get("lineHeight", 1.0))
+        except Exception:
+            line_height_factor = 1.0
+        if firebase_settings.get("fontSelect"):
+            font_override = firebase_settings["fontSelect"]
+
+    # --- 行単位でHTML構築 ---
     for line in lines:
         if line.startswith("[行間]"):
+            # 行間 → Firestore倍率を掛ける
             try:
                 sp = float(line.replace("[行間]", "").strip())
+                sp *= line_height_factor  # 倍率反映
                 html_out += f'<div style="margin-top:{sp}px;"></div>'
             except Exception:
                 continue
@@ -479,12 +503,23 @@ def create_styled_html(text_content, app_root):
             try:
                 parts = line.split("]")
                 font_name = parts[0].split(":")[1]
-                size = float(parts[1].split(":")[1])
+                base_size = float(parts[1].split(":")[1])
                 weight = parts[2].split(":")[1]
                 text = parts[3]
-                style = f"font-family:{font_name}; font-size:{size}px; font-weight:{weight};"
+
+                # --- Firestore反映 ---
+                size = base_size + font_size_add
+                use_font = font_override or font_name
+
+                style = (
+                    f"font-family:{use_font}; "
+                    f"font-size:{size}px; "
+                    f"font-weight:{weight}; "
+                    f"line-height:{line_height_factor:.2f};"
+                )
                 html_out += f'<p style="{style}">{html.escape(text)}</p>'
-            except Exception:
+            except Exception as e:
+                print("スタイル行解析エラー:", e)
                 continue
 
         elif line.startswith("[画像:"):
@@ -508,34 +543,42 @@ def create_styled_html(text_content, app_root):
     return html_out
 
 
-def create_pdf_with_weasyprint(neo_content,
-                               output_pdf_path,
-                               app_root,
-                               firebase_settings=None):
+def create_pdf_with_weasyprint(
+    neo_content: str,
+    output_pdf_path: str,
+    app_root: str,
+    firebase_settings: dict | None = None
+):
     try:
-        html_body = create_styled_html(neo_content, app_root)
+        html_body = create_styled_html(neo_content, app_root, firebase_settings)
 
-        # --- Firestore 設定がある場合は反映 ---
-        font_family = "IPAexGothic"
-        font_size = "12pt"
-        line_height = "1.6"
+        # --- Firestore 設定（ベース値に加算する方式） ---
+        base_font_family = "IPAexGothic"
+        base_font_size = 12.0  # pt
+        base_line_height = 1.6  # 倍率
+
+        font_family = base_font_family
+        font_size = f"{base_font_size:.1f}pt"
+        line_height = str(base_line_height)
 
         if firebase_settings:
-            # フォント指定
+            # フォント選択：完全上書き
             if firebase_settings.get("fontSelect"):
                 font_family = firebase_settings["fontSelect"]
 
-            # フォントサイズ
+            # フォントサイズ：加算適用
             if firebase_settings.get("fontSize"):
                 try:
-                    font_size = f"{float(firebase_settings['fontSize']):.1f}pt"
+                    font_size_add = float(firebase_settings["fontSize"])
+                    font_size = f"{base_font_size + font_size_add:.1f}pt"
                 except Exception:
                     pass
 
-            # 行間
+            # 行間：加算適用
             if firebase_settings.get("lineHeight"):
                 try:
-                    line_height = str(float(firebase_settings["lineHeight"]))
+                    line_height_add = float(firebase_settings["lineHeight"])
+                    line_height = str(base_line_height + line_height_add)
                 except Exception:
                     pass
 
@@ -558,15 +601,14 @@ def create_pdf_with_weasyprint(neo_content,
         }}
         """
 
-        HTML(string=f"<style>{css}</style>{html_body}",
-             base_url=app_root).write_pdf(output_pdf_path)
+        HTML(string=f"<style>{css}</style>{html_body}", base_url=app_root).write_pdf(output_pdf_path)
         return (True, None)
 
     except Exception as e:
         return (False, f"WeasyPrintエラー: {e}")
 
 
-def process_pdf(pdf_path, firebase_settings=None):
+def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
     try:
         doc = fitz.open(pdf_path)
         assert isinstance(doc, fitz.Document)
@@ -577,23 +619,16 @@ def process_pdf(pdf_path, firebase_settings=None):
     dir_name = os.path.join(OUTPUT_FOLDER, basename)
     os.makedirs(dir_name, exist_ok=True)
 
-    # Firebase設定
-    fs_font_override = firebase_settings.get(
-        'fontSelect') if firebase_settings else None
-    fs_size_add = float(firebase_settings.get('fontSize',
-                                              0)) if firebase_settings else 0.0
+    # --- Firebase設定を取得 ---
+    fs_font_override = firebase_settings.get("fontSelect") if firebase_settings else None
+    fs_size_add = float(firebase_settings.get("fontSize", 0)) if firebase_settings else 0.0
 
     # 出力ファイルパス
     output_file_OG = os.path.join(dir_name, f"{basename}_OG.txt")
     output_file_NEO = os.path.join(dir_name, f"{basename}_NEO.txt")
     output_file_SORTED = os.path.join(dir_name, f"{basename}_SORTED.txt")
 
-    # OGテキスト保存
-    with open(output_file_OG, "w", encoding="utf-8") as f:
-        for p in doc:
-            f.write(str(p.get_text("text")))
-
-    neo, sorted_txt, imgs = [], [], []
+    neo, sorted_txt, imgs, og_tagged = [], [], [], []
 
     # --- ページごとの抽出 ---
     for i, page in enumerate(doc):
@@ -603,14 +638,9 @@ def process_pdf(pdf_path, firebase_settings=None):
         # テキスト抽出
         for blk in page.get_text("dict")["blocks"]:
             if blk["type"] == 0:
-                text = "".join(span["text"] for ln in blk["lines"]
-                               for span in ln["spans"]).strip()
+                text = "".join(span["text"] for ln in blk["lines"] for span in ln["spans"]).strip()
                 if text:
-                    elements.append({
-                        "type": "text",
-                        "bbox": blk["bbox"],
-                        "content": text
-                    })
+                    elements.append({"type": "text", "bbox": blk["bbox"], "content": text})
 
         # 画像抽出
         for j, img in enumerate(page.get_images(full=True)):
@@ -625,77 +655,123 @@ def process_pdf(pdf_path, firebase_settings=None):
                 rel = os.path.join(basename, name).replace("\\", "/")
                 imgs.append(rel)
                 bbox = page.get_image_info(xref)[0]["bbox"]
-                elements.append({
-                    "type": "image",
-                    "bbox": bbox,
-                    "content": full
-                })
+                elements.append({"type": "image", "bbox": bbox, "content": full})
             except Exception as e:
                 print("画像抽出失敗:", e)
 
-        # 要素を座標順でソート
+        # 座標順ソート
         elements.sort(key=lambda x: (x["bbox"][1], x["bbox"][0]))
 
         prev_y = None
         for el in elements:
             y = el["bbox"][1]
+
+            # --- 🔹 行間処理 ---
             if prev_y is not None:
                 gap = y - prev_y
                 if gap > 0:
-                    neo.append(f"[行間]{gap:.2f}\n")
+                    line_gap = gap
+                    # Firestoreの倍率反映（NEO用）
+                    if firebase_settings and firebase_settings.get("lineHeight"):
+                        try:
+                            multiplier = float(firebase_settings["lineHeight"])
+                            line_gap = gap * multiplier
+                        except Exception:
+                            pass
+                    # それぞれに反映
+                    neo.append(f"[行間]{line_gap:.2f}\n")  # 生徒設定適用後
+                    og_tagged.append(f"[行間]{gap:.2f}\n")  # 元PDF値
 
+            # --- テキスト要素 ---
             if el["type"] == "text":
                 text = el["content"]
+
+                # --- 元PDFフォント情報を取得 (OG用)
+                try:
+                    found_span = None
+                    for blk in page.get_text("dict")["blocks"]:
+                        if blk["type"] == 0:
+                            for line in blk["lines"]:
+                                for span in line["spans"]:
+                                    if span["text"].strip() and span["text"].strip() in text:
+                                        found_span = span
+                                        break
+                                if found_span:
+                                    break
+                        if found_span:
+                            break
+
+                    if found_span:
+                        og_font = found_span.get("font", "Unknown")
+                        og_size = found_span.get("size", 12.0)
+                        og_weight = "bold" if "Bold" in og_font else "normal"
+                    else:
+                        og_font, og_size, og_weight = "Unknown", 12.0, "normal"
+
+                except Exception:
+                    og_font, og_size, og_weight = "Unknown", 12.0, "normal"
+
+                # --- Firestore設定反映後のフォント (NEO用)
                 font = fs_font_override or "IPAexGothic, sans-serif"
-                size = 12.0 + fs_size_add
-                neo.append(
-                    f"[フォント:{font}][サイズ:{size:.2f}][ウェイト:normal]{text}\n")
+                size = og_size + fs_size_add  # 元サイズに加算
+
+                # --- 出力
+                neo.append(f"[フォント:{font}][サイズ:{size:.2f}][ウェイト:normal]{text}\n")
+                og_tagged.append(f"[フォント:{og_font}][サイズ:{og_size:.2f}][ウェイト:{og_weight}]{text}\n")
                 sorted_txt.append(f"テキスト: {text}\n")
+
                 prev_y = el["bbox"][3]
+
+            # --- 画像要素 ---
             elif el["type"] == "image":
                 bbox = el["bbox"]
-                neo.append(
-                    f"[画像:{el['content']}:{bbox[0]:.2f}:{bbox[1]:.2f}:{bbox[2]-bbox[0]:.2f}:{bbox[3]-bbox[1]:.2f}]\n"
-                )
+                img_tag = f"[画像:{el['content']}:{bbox[0]:.2f}:{bbox[1]:.2f}:{bbox[2]-bbox[0]:.2f}:{bbox[3]-bbox[1]:.2f}]\n"
+                neo.append(img_tag)
+                og_tagged.append(img_tag)
                 sorted_txt.append(f"[画像] {el['content']} | BBOX: {bbox}\n\n")
                 prev_y = bbox[3]
 
+    # --- 出力内容を結合 ---
     neo_content = "".join(neo)
+    og_tagged_content = "".join(og_tagged)
     sorted_content = "".join(sorted_txt)
 
-    # ファイル保存
+    # --- ファイル保存 ---
     with open(output_file_NEO, "w", encoding="utf-8") as f:
         f.write(neo_content)
     with open(output_file_SORTED, "w", encoding="utf-8") as f:
         f.write(sorted_content)
+    with open(output_file_OG, "w", encoding="utf-8") as f:
+        f.write(og_tagged_content)
 
-    # PDF生成
+    # --- PDF再構築 ---
     recreated_pdf_filename = f"{basename}_recreated.pdf"
     recreated_pdf_path = os.path.join(dir_name, recreated_pdf_filename)
-    pdf_ok, _ = create_pdf_with_weasyprint(neo_content,
-                                           recreated_pdf_path,
-                                           app_root,
-                                           firebase_settings=firebase_settings)
-    recreated_pdf_url = os.path.join(basename, recreated_pdf_filename).replace(
-        "\\", "/") if pdf_ok else ""
+    pdf_ok, _ = create_pdf_with_weasyprint(
+        neo_content,
+        recreated_pdf_path,
+        app_root,
+        firebase_settings=firebase_settings
+    )
+    recreated_pdf_url = os.path.join(basename, recreated_pdf_filename).replace("\\", "/") if pdf_ok else ""
     if not pdf_ok:
         download_html = "<p style='color:red;'>PDFの再構成に失敗しました。</p>"
 
-    # HTML生成用
-    styled_neo_html = create_styled_html(neo_content, app_root)
-    og = open(output_file_OG, encoding="utf-8").read()
-
+    # --- HTML生成 ---
+    styled_neo_html = create_styled_html(neo_content, app_root, firebase_settings)
     image_gallery_html = "".join(
         f'<a href="/outputs/{html.escape(url)}" target="_blank">'
         f'<img src="/outputs/{html.escape(url)}" alt="image"></a>'
-        for url in imgs) or "<p>画像は抽出されませんでした。</p>"
+        for url in imgs
+    ) or "<p>画像は抽出されませんでした。</p>"
 
     download_html = (
         f'<div class="download-section"><h3>再構成されたPDF</h3>'
         f'<a href="/outputs/{html.escape(recreated_pdf_url)}" class="action-link" download>ダウンロード</a></div>'
-        if pdf_ok else "")
+        if pdf_ok else ""
+    )
 
-    # --- 見た目統合版HTML出力 ---
+    # --- 統合HTML ---
     result_html = f"""
     <!doctype html>
     <html lang="ja">
@@ -731,7 +807,7 @@ def process_pdf(pdf_path, firebase_settings=None):
                 {download_html}
                 <details><summary>スタイル付き NEOテキスト</summary><div class="styled-content-box">{styled_neo_html}</div></details>
                 <details><summary>NEOテキスト (タグ付き)</summary><div class="content-box">{html.escape(neo_content)}</div></details>
-                <details><summary>OGテキスト</summary><div class="content-box">{html.escape(og)}</div></details>
+                <details><summary>OGテキスト (タグ付き)</summary><div class="content-box">{html.escape(og_tagged_content)}</div></details>
                 <details><summary>時系列ソート</summary><div class="content-box">{html.escape(sorted_content)}</div></details>
                 <details open><summary>抽出画像 ({len(imgs)}枚)</summary><div class="image-gallery">{image_gallery_html}</div></details>
                 <a href="/" class="action-link back-link">別のファイルを処理する</a>
