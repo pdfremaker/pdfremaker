@@ -594,8 +594,13 @@ def create_pdf_with_weasyprint(
                 except Exception:
                     pass
 
+        print("app_root is:", app_root)
         # IPAexGothic フォント設定
-        font_file_path = os.path.join(app_root, "ipaexg.ttf")
+        font_file_path = os.path.join(app_root, "fonts", "ipaexg.ttf")
+        # あれほど言うたのにfontsファイルに入れなかった人用
+        if not os.path.exists(font_file_path):
+            font_file_path = os.path.join(app_root, "ipaexg.ttf")
+
         if not os.path.exists(font_file_path):
             return (False, "フォントファイル 'ipaexg.ttf' が見つかりません。")
 
