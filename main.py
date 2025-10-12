@@ -58,7 +58,7 @@ def get_font_path(app_root, font_family_name="IPAexGothic"):
     font_path = os.path.abspath(font_path)
     if not os.path.exists(font_path):
         print(f"⚠️ フォントファイルが存在しません: {font_path}")
-        font_path = os.path.join(app_root, "ipaexg.ttf")
+        font_path = os.path.join(app_root, "fonts", "ipaexg.ttf")
     return font_path
 
 
