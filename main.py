@@ -85,7 +85,7 @@ try:
         cred = credentials.Certificate(cred_dict)
     else:
         cred = credentials.Certificate(
-            os.path.join(app_root, "serAccoCaMnFv.json"))
+            os.path.join(app_root, "serAccoCaMnNeMg.json"))
     firebase_admin.initialize_app(cred)
     db = firestore.client()
 except Exception as e:
@@ -619,8 +619,25 @@ def create_pdf_with_weasyprint(
         css = f"""
         @font-face {{
             font-family: 'IPAexGothic';
-            src: url('{font_url}');
+            src: url('{path2url(os.path.join(app_root, "fonts", "ipaexg.ttf"))}');
         }}
+        @font-face {{
+            font-family: 'IPAexMincho';
+            src: url('{path2url(os.path.join(app_root, "fonts", "ipaexm.ttf"))}');
+        }}
+        @font-face {{
+            font-family: 'Noto Sans JP';
+            src: url('{path2url(os.path.join(app_root, "fonts", "NotoSansJP-Regular.ttf"))}');
+        }}
+        @font-face {{
+            font-family: 'Noto Serif JP';
+            src: url('{path2url(os.path.join(app_root, "fonts", "NotoSerifJP-Regular.ttf"))}');
+        }}
+        @font-face {{
+            font-family: 'Kosugi Maru';
+            src: url('{path2url(os.path.join(app_root, "fonts", "KosugiMaru-Regular.ttf"))}');
+        }}
+
         body {{
             font-family: '{font_family}', 'IPAexGothic', sans-serif;
             font-size: {font_size};
