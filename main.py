@@ -54,11 +54,21 @@ FONT_FILE_MAP = {
 
 def get_font_path(app_root, font_family_name="IPAexGothic"):
     font_file = FONT_FILE_MAP.get(font_family_name, "ipaexg.ttf")
-    font_path = os.path.join(app_root, font_file)
+    if not os.path.isabs(font_file):
+        font_path = os.path.join(app_root, font_file)
+    else:
+        font_path = font_file
+
     font_path = os.path.abspath(font_path)
     if not os.path.exists(font_path):
-        print(f"⚠️ フォントファイルが存在しません: {font_path}")
-        font_path = os.path.join(app_root, "fonts", "ipaexg.ttf")
+        # ここでフォールバック先を fonts フォルダに限定
+        fallback_path = os.path.join(app_root, "fonts", "ipaexg.ttf")
+        if os.path.exists(fallback_path):
+            print(f"✅ フォントファイルが見つかりました: {fallback_path}")
+            return fallback_path
+        else:
+            print(f"⚠️ フォントファイルが存在しません: {fallback_path}")
+            return None
     return font_path
 
 
