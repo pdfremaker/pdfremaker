@@ -1,3 +1,13 @@
+"""
+replitで変更したデータをGitHubに反映させるときは次のコードをShellにコピペ
+
+git add .
+git commit -m "update: "
+git push
+
+↑git commit -m "update"の中に更新内容を書く 別にupdateのままでもおけ丸水産
+"""
+
 # Flask関連
 from flask import Flask, request, jsonify, send_file, render_template
 from werkzeug.utils import secure_filename
@@ -22,6 +32,9 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont  # 日本語フォント�
 # Firebase関連
 import firebase_admin
 from firebase_admin import credentials, firestore
+
+#デバッグ関連
+import logging
 
 # プログラム起動のあいさつ
 print("(;^ω^)起動中...")
@@ -677,51 +690,18 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
         f'<a href="/outputs/{html.escape(recreated_pdf_url)}" class="action-link" download>ダウンロード</a></div>'
         if pdf_ok else "")
 
-    # --- 統合HTML ---
-    result_html = f"""
-    <!doctype html>
-    <html lang="ja">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>処理結果</title>
-            <style>
-                body {{ font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; margin: 0; background-color: #f4f4f9; }}
-                .container {{ max-width: 960px; margin: 2em auto; padding: 2em; background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
-                h2 {{ border-bottom: 2px solid #007bff; padding-bottom: 10px; color: #333; }}
-                .content-box {{ border: 1px solid #ddd; background-color: #fdfdfd; padding: 1em; margin-top: 1em; white-space: pre-wrap; word-wrap: break-word; max-height: 400px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 14px; }}
-                .styled-content-box {{ border: 1px solid #ddd; background-color: #fdfdfd; padding: 1em; margin-top: 1em; max-height: 400px; overflow-y: auto; }}
-                details {{ border: 1px solid #ccc; border-radius: 5px; padding: 0.5em; margin-bottom: 1em; background-color: #f9f9f9; }}
-                summary {{ font-weight: bold; cursor: pointer; padding: 0.5em; font-size: 1.1em; color: #0056b3; }}
-                .info, .download-section {{ background: #eef; padding: 1em; border-radius: 8px; margin-bottom: 1.5em; }}
-                .image-gallery {{ display: flex; flex-wrap: wrap; gap: 15px; padding: 1em; }}
-                .image-gallery img {{ border: 2px solid #ddd; border-radius: 5px; padding: 5px; max-width: 150px; height: auto; cursor: pointer; transition: transform 0.2s; }}
-                .image-gallery img:hover {{ transform: scale(1.05); border-color: #007bff; }}
-                .action-link {{ display: inline-block; margin-top: 1em; background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; }}
-                .action-link:hover {{ background-color: #218838; }}
-                .back-link {{ background-color: #6c757d; }}
-                .back-link:hover {{ background-color: #5a6268; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>処理完了！</h2>
-                <div class="info">
-                    <p><strong>処理対象ファイル:</strong> {html.escape(os.path.basename(pdf_path))}</p>
-                    <p><strong>保存先フォルダ:</strong> {html.escape(os.path.abspath(dir_name))}</p>
-                </div>
-                {download_html}
-                <details><summary>スタイル付き NEOテキスト</summary><div class="styled-content-box">{styled_neo_html}</div></details>
-                <details><summary>NEOテキスト (タグ付き)</summary><div class="content-box">{html.escape(neo_content)}</div></details>
-                <details><summary>OGテキスト (タグ付き)</summary><div class="content-box">{html.escape(og_tagged_content)}</div></details>
-                <details><summary>時系列ソート</summary><div class="content-box">{html.escape(sorted_content)}</div></details>
-                <details open><summary>抽出画像 ({len(imgs)}枚)</summary><div class="image-gallery">{image_gallery_html}</div></details>
-                <a href="/" class="action-link back-link">別のファイルを処理する</a>
-            </div>
-        </body>
-    </html>
-    """
-    return result_html
+    return render_template(
+        "result.html",
+        pdf_name=os.path.basename(pdf_path),
+        dir_name=os.path.abspath(dir_name),
+        download_html=download_html,
+        styled_neo_html=styled_neo_html,
+        neo_content=neo_content,
+        og_tagged_content=og_tagged_content,
+        sorted_content=sorted_content,
+        imgs=imgs,
+        image_gallery_html=image_gallery_html
+    )
 
 
 if __name__ == "__main__":

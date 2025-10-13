@@ -1,0 +1,176 @@
+/* ============================
+   page_result.css
+   処理結果ページ専用スタイル
+   ============================ */
+
+/* 🧱 ベースレイアウト */
+body {
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  line-height: 1.6;
+  margin: 0;
+  background-color: #f4f4f9;
+  color: #333;
+}
+
+.container {
+  max-width: 960px;
+  margin: 2em auto;
+  padding: 2em;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+/* 🏷 見出し */
+h2 {
+  border-bottom: 2px solid #007bff;
+  padding-bottom: 10px;
+  color: #333;
+  font-size: 1.6rem;
+  margin-bottom: 1rem;
+}
+
+/* 📄 コンテンツボックス */
+.content-box, .styled-content-box {
+  border: 1px solid #ddd;
+  background-color: #fdfdfd;
+  padding: 1em;
+  margin-top: 1em;
+  max-height: 400px;
+  overflow-y: auto;
+  border-radius: 5px;
+}
+
+.content-box {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+}
+
+/* 📦 詳細・折りたたみ */
+details {
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  padding: 0.5em;
+  margin-bottom: 1em;
+  background-color: #f9f9f9;
+}
+
+summary {
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0.5em;
+  font-size: 1.1em;
+  color: #0056b3;
+}
+
+/* 🖼 画像ギャラリー */
+.image-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  padding: 1em;
+  justify-content: center;
+}
+
+.image-gallery img {
+  border: 2px solid #ddd;
+  border-radius: 5px;
+  padding: 5px;
+  max-width: 150px;
+  height: auto;
+  cursor: pointer;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.image-gallery img:hover {
+  transform: scale(1.05);
+  border-color: #007bff;
+}
+
+/* 🔗 アクションボタン */
+.action-link {
+  display: inline-block;
+  margin-top: 1em;
+  background-color: #28a745;
+  color: white;
+  padding: 10px 20px;
+  text-decoration: none;
+  border-radius: 5px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.action-link:hover {
+  background-color: #218838;
+}
+
+.back-link {
+  background-color: #6c757d;
+}
+
+.back-link:hover {
+  background-color: #5a6268;
+}
+
+/* 🧩 情報ボックス */
+.info, .download-section {
+  background: #eef;
+  padding: 1em;
+  border-radius: 8px;
+  margin-bottom: 1.5em;
+}
+
+/* スマホのレスポンシブ調整 */
+@media (max-width: 768px) {
+  .container {
+    width: 95%;
+    padding: 1.2em;
+  }
+
+  h2 {
+    font-size: 1.4rem;
+  }
+
+  .content-box, .styled-content-box {
+    font-size: 13px;
+    padding: 0.8em;
+    max-height: 300px;
+  }
+
+  .image-gallery {
+    gap: 10px;
+    padding: 0.5em;
+  }
+
+  .image-gallery img {
+    max-width: 120px;
+  }
+
+  .action-link {
+    display: block;
+    width: 100%;
+    padding: 12px 0;
+  }
+}
+
+@media (max-width: 480px) {
+  h2 {
+    font-size: 1.2rem;
+    text-align: center;
+  }
+
+  .container {
+    margin: 1em auto;
+    padding: 1em;
+  }
+
+  .image-gallery img {
+    max-width: 100px;
+  }
+
+  summary {
+    font-size: 1rem;
+  }
+}

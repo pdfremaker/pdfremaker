@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>処理結果</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/page_result.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h2>処理完了！</h2>
+
+    <div class="info">
+      <p><strong>処理対象ファイル:</strong> {{ pdf_name }}</p>
+      <p><strong>保存先フォルダ:</strong> {{ dir_name }}</p>
+    </div>
+
+    {{ download_html | safe }}
+
+    <details>
+      <summary>スタイル付き NEOテキスト</summary>
+      <div class="styled-content-box">{{ styled_neo_html | safe }}</div>
+    </details>
+
+    <details>
+      <summary>NEOテキスト (タグ付き)</summary>
+      <div class="content-box">{{ neo_content }}</div>
+    </details>
+
+    <details>
+      <summary>OGテキスト (タグ付き)</summary>
+      <div class="content-box">{{ og_tagged_content }}</div>
+    </details>
+
+    <details>
+      <summary>時系列ソート</summary>
+      <div class="content-box">{{ sorted_content }}</div>
+    </details>
+
+    <details open>
+      <summary>抽出画像 ({{ imgs|length }}枚)</summary>
+      <div class="image-gallery">{{ image_gallery_html | safe }}</div>
+    </details>
+
+    <a href="/" class="action-link back-link">別のファイルを処理する</a>
+  </div>
+</body>
+</html>
