@@ -17,86 +17,34 @@ import os
 import re
 import tempfile
 import html
-import html as pyhtml  # html.escapeを複数箇所で用途分けしてるから別名でも保持しとく
+import html as pyhtml
 import json
 from datetime import datetime, timedelta
 import shutil
 
 # PDF操作関連
-import pymupdf as fitz  # PyMuPDFのfitz（fitzで動かなくなる問題解決）
+import pymupdf as fitz
 from weasyprint import HTML, CSS
-from weasyprint.urls import path2url  # フォントファイルのURL変換で使用
+from weasyprint.urls import path2url
 
-# フォント・テキスト描画関連
+# フォント関連
 from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont  # 日本語フォントを使用可に
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
 # Firebase関連
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# デバッグ関連
+# デバッグ・ログ関連
 import logging
 from logging.handlers import RotatingFileHandler
 
-# ログ設定
-def setup_logging(days_to_keep: int = 7):
-    """
-    ログを logs/YYYY-MM-DD/app.log に出力し、起動時に古いログ（日付フォルダ）を削除します。
-    days_to_keep: 残す日数（デフォルト7）
-    """
-    # ベース logs ディレクトリ
-    base_log_dir = os.environ.get("LOG_BASE_DIR", "logs")
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    today_dir = os.path.join(base_log_dir, today_str)
-    os.makedirs(today_dir, exist_ok=True)
 
-    log_file_path = os.path.join(today_dir, "app.log")
-
-    # ロガー名
-    main_logger_name = "pdf_remaker"
-
-    # ログフォーマッタ
-    log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s")
-
-    # コンソールハンドラ
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(log_formatter)
-
-    # ファイルハンドラ（ローテーション）
-    file_handler = RotatingFileHandler(log_file_path, maxBytes=1_000_000, backupCount=5, encoding="utf-8")
-    file_handler.setFormatter(log_formatter)
-
-    # ルートロガーの重複登録を防ぐ（既にセットしているハンドラを消す）
-    logger = logging.getLogger(main_logger_name)
-    logger.setLevel(logging.INFO)
-    # remove existing handlers to avoid duplicate logs on reload
-    if logger.handlers:
-        for h in logger.handlers[:]:
-            logger.removeHandler(h)
-
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-
-    # Firestore専用ロガー（同じハンドラを共有）
-    firestore_logger = logging.getLogger("pdfremaker.firestore")
-    firestore_logger.setLevel(logging.INFO)
-    # clear handlers and add
-    if firestore_logger.handlers:
-        for h in firestore_logger.handlers[:]:
-            firestore_logger.removeHandler(h)
-    firestore_logger.addHandler(console_handler)
-    firestore_logger.addHandler(file_handler)
-
-    # 起動時に古いログフォルダをクリーンアップ
-    cleanup_old_logs(base_log_dir, days_to_keep, logger)
-
-    return logger, firestore_logger
-
-
+# 古いログ削除
 def cleanup_old_logs(base_dir: str, days_to_keep: int, logger_obj):
     """
-    base_dir 内の YYYY-MM-DD 形式フォルダをチェックし、days_to_keep 日より古ければ削除する。
+    base_dir 内の YYYY-MM-DD 形式フォルダをチェックし、
+    days_to_keep 日より古ければ削除する。
     """
     if not os.path.isdir(base_dir):
         logger_obj.info("cleanup_old_logs: no logs dir yet (%s)", base_dir)
@@ -111,47 +59,89 @@ def cleanup_old_logs(base_dir: str, days_to_keep: int, logger_obj):
         try:
             folder_date = datetime.strptime(name, "%Y-%m-%d")
         except ValueError:
-            # 名前が日付形式でない場合はスキップ
             continue
         if folder_date < cutoff:
             try:
                 shutil.rmtree(path)
-                logger_obj.info("cleanup_old_logs: removed old log folder %s", path)
+                logger_obj.info("cleanup_old_logs: removed old log folder %s",
+                                path)
             except Exception as e:
-                logger_obj.exception("cleanup_old_logs: failed to remove %s: %s", path, e)
+                logger_obj.exception(
+                    "cleanup_old_logs: failed to remove %s: %s", path, e)
 
-# days to keep can be overridden by environment variable LOG_DAYS_TO_KEEP
+
+# ログ設定関数
+def setup_logging():
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+
+    max_bytes = int(os.environ.get("LOG_MAX_BYTES", "2000000"))  # 2MBまで
+    backup_count = int(os.environ.get("LOG_BACKUP_COUNT", "5"))  # ローテーション5世代保持
+
+    # --- 共通フォーマット ---
+    log_format = "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+    formatter = logging.Formatter(log_format)
+
+    # --- 通常ログ (INFO以上) ---
+    app_log_path = os.path.join(log_dir, "app.log")
+    app_handler = RotatingFileHandler(app_log_path,
+                                      maxBytes=max_bytes,
+                                      backupCount=backup_count,
+                                      encoding="utf-8")
+    app_handler.setLevel(logging.INFO)
+    app_handler.setFormatter(formatter)
+
+    # --- エラーログ (WARNING以上を記録) ---
+    error_log_path = os.path.join(log_dir, "error.log")
+    error_handler = RotatingFileHandler(error_log_path,
+                                        maxBytes=max_bytes,
+                                        backupCount=backup_count,
+                                        encoding="utf-8")
+    error_handler.setLevel(logging.WARNING)
+    error_handler.setFormatter(formatter)
+
+    # --- コンソール出力も維持 ---
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    console_handler.setLevel(logging.INFO)
+
+    # --- 基本設定 ---
+    logging.basicConfig(level=logging.INFO,
+                        handlers=[app_handler, error_handler, console_handler])
+
+    logger = logging.getLogger("pdf_remaker")
+    logger.info(f"🪵 Logging initialized (max={max_bytes} bytes, backups={backup_count})")
+    logger.info(f"📁 Log files: {app_log_path}, {error_log_path}")
+
+    return logger
+
+
+# ログ初期化・古いログ掃除
+logger = setup_logging()
+
 try:
     days_to_keep = int(os.environ.get("LOG_DAYS_TO_KEEP", "7"))
 except ValueError:
     days_to_keep = 7
 
-logger, firestore_logger = setup_logging(days_to_keep=days_to_keep)
+cleanup_old_logs("logs", days_to_keep, logger)
 
-# プログラム起動のあいさつ
-print("(;^ω^)起動中...")
+# Flask・環境設定
+print("(;^ω^) 起動中...")
 print(f"DEBUG: fitz module path: {fitz.__file__}")
 print(f"DEBUG: fitz.open available: {hasattr(fitz, 'open')}")
 
-# まず関数を定義
 app_root = os.path.dirname(os.path.abspath(__file__))
 
-# フォント情報の設定
+# フォント設定
 FONT_FILE_MAP = {
-    # 教科書体に近い読みやすさ（明朝系）
     "Noto Serif JP": "fonts/NotoSerifJP-Regular.ttf",
     "明朝体, serif": "fonts/NotoSerifJP-Regular.ttf",
-    "IPAex明朝": "fonts/ipaexg.ttf",  # fallback（代用：明朝もIPAexに）
-
-    # 読みやすいゴシック（標準・ベース）
+    "IPAex明朝": "fonts/ipaexg.ttf",
     "Noto Sans JP": "fonts/NotoSansJP-Regular.ttf",
     "ゴシック体, sans-serif": "fonts/NotoSansJP-Regular.ttf",
-    "IPAexゴシック": "fonts/ipaexg.ttf",  # fallback
-
-    # 優しい丸ゴシック（読み障がい支援向け）
+    "IPAexゴシック": "fonts/ipaexg.ttf",
     "Kosugi Maru": "fonts/KosugiMaru-Regular.ttf",
-
-    # 英字・軽量フォントの代替
     "Verdana, sans-serif": "fonts/NotoSansJP-Regular.ttf",
     "Arial, sans-serif": "fonts/NotoSansJP-Regular.ttf"
 }
@@ -166,7 +156,6 @@ def get_font_path(app_root, font_family_name="IPAexGothic"):
 
     font_path = os.path.abspath(font_path)
     if not os.path.exists(font_path):
-        # ここでフォールバック先を fonts フォルダに限定
         fallback_path = os.path.join(app_root, "fonts", "ipaexg.ttf")
         if os.path.exists(fallback_path):
             logger.info(f"✅ フォントファイルが見つかりました: {fallback_path}")
@@ -177,23 +166,24 @@ def get_font_path(app_root, font_family_name="IPAexGothic"):
     return font_path
 
 
-# 関数を呼び出す
 font_path = get_font_path(app_root, "IPAexGothic")
 font_url = path2url(font_path) if font_path else None
 
-# Firebaseを初期化
+# Firebase 初期化
 try:
     service_key_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
     if service_key_json:
-        # Render環境では環境変数から秘密鍵を取得
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w") as temp_file:
+        # Render等のサーバ環境
+        with tempfile.NamedTemporaryFile(delete=False,
+                                         suffix=".json",
+                                         mode="w") as temp_file:
             temp_file.write(service_key_json)
             temp_file_path = temp_file.name
         cred = credentials.Certificate(temp_file_path)
         firebase_admin.initialize_app(cred)
         logger.info("✅ Firebase初期化: 環境変数から読み込み成功")
     else:
-        # ローカル環境用: ファイルから読み込み
+        # ローカル環境
         cred = credentials.Certificate("serviceAccountKey.json")
         firebase_admin.initialize_app(cred)
         logger.info("✅ Firebase初期化: serviceAccountKey.jsonから読み込み成功")
@@ -213,7 +203,8 @@ def get_firestore_config(user_id="default_user"):
         doc = config_ref.document(user_id).get()
         if doc.exists:
             data = doc.to_dict()
-            logger.debug("get_firestore_config: found document %s -> %s", user_id, data)
+            logger.debug("get_firestore_config: found document %s -> %s",
+                         user_id, data)
             return data
         else:
             # Firestoreにまだ設定がない場合、デフォルトを作成
@@ -223,36 +214,32 @@ def get_firestore_config(user_id="default_user"):
                 "fontSelect": "Kosugi Maru"
             }
             config_ref.document(user_id).set(default_config)
-            logger.info("get_firestore_config: created default config for new user_id=%s", user_id)
+            logger.info(
+                "get_firestore_config: created default config for new user_id=%s",
+                user_id)
             return default_config
     except Exception as e:
-        logger.exception("get_firestore_config: Firestore access failed for user_id=%s", user_id)
+        logger.exception(
+            "get_firestore_config: Firestore access failed for user_id=%s",
+            user_id)
         # エラー時には安全なデフォルトを返す
-        return {
-            "fontSize": 16,
-            "lineHeight": 1.6,
-            "fontSelect": "Kosugi Maru"
-        }
+        return {"fontSize": 16, "lineHeight": 1.6, "fontSelect": "Kosugi Maru"}
 
 
 def get_document(collection_name, doc_id):
-    if db is None:
-        logger.error("get_document: Firestore client is not initialized.")
-        return None
-
-    logger.info("get_document: loading document '%s' from collection '%s'", doc_id, collection_name)
     try:
+        logger.info(
+            f"get_document: loading document '{doc_id}' from collection '{collection_name}'"
+        )
         doc_ref = db.collection(collection_name).document(doc_id)
-        docf = doc_ref.get()
-        if docf.exists:
-            data = docf.to_dict()
-            logger.debug("get_document: found document %s -> %s", doc_id, data)
-            return data
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict()
         else:
-            logger.warning("get_document: document not found (collection=%s, id=%s)", collection_name, doc_id)
+            logger.warning(f"get_document: document '{doc_id}' not found.")
             return None
     except Exception as e:
-        logger.exception("get_document: Firestore access failed (collection=%s, id=%s)", collection_name, doc_id)
+        logger.exception("Firestoreアクセス中にエラーが発生しました")
         return None
 
 
@@ -268,6 +255,7 @@ OUTPUT_FOLDER = os.path.join(app.root_path, "output")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+
 # 戻る
 @app.route('/return')
 def return_page():
@@ -282,36 +270,19 @@ def edit_page():
 
 @app.route("/update_firestore", methods=["POST"])
 def update_firestore():
-    data = request.get_json()
-    logger.info("update_firestore called")
-    logger.debug("payload: %s", data)
-
-    doc_id = data.get("id")
-    name = data.get("name")
-    number = data.get("number")
-    font_size = data.get("fontSize")
-    line_height = data.get("lineHeight")
-    font_select = data.get("fontSelect")
-
-    if not doc_id:
-        logger.warning("update_firestore: missing id in payload")
-        return jsonify({"message": "IDが指定されていません。"}), 400
-
     try:
-        db = firestore.client()
-        db.collection("messages").document(doc_id).set({
-            "id": doc_id,
-            "name": name,
-            "number": number,
-            "fontSize": font_size,
-            "lineHeight": line_height,
-            "fontSelect": font_select
-        })
-        logger.info("Firestore updated for id=%s", doc_id)
+        data = request.get_json()
+        doc_id = data.get("id")
+        if not doc_id:
+            return jsonify({"message": "IDが指定されていません。"}), 400
+
+        db.collection("messages").document(doc_id).set(data)
+        logger.info(f"Firestore updated for id={doc_id}")
         return jsonify({"message": f"{doc_id} の設定を登録しました！"})
-    except Exception as e:
-        logger.exception("update_firestore: Firestore書き込み失敗 for id=%s", doc_id)
-        return jsonify({"message": "Firestore更新エラー"}), 500
+
+    except Exception:
+        logger.exception("Firestore更新中にエラーが発生しました")
+        return jsonify({"message": "Firestore更新中に内部エラーが発生しました。"}), 500
 
 
 # Firestoreのメッセージ取得
@@ -355,9 +326,12 @@ def upload_pdf():
         if student_id:
             firebase_settings = get_document("messages", student_id)
             if firebase_settings:
-                logger.info("upload_pdf: applying firebase settings for id=%s", student_id)
+                logger.info("upload_pdf: applying firebase settings for id=%s",
+                            student_id)
             else:
-                logger.info("upload_pdf: no firebase settings found for id=%s; using defaults", student_id)
+                logger.info(
+                    "upload_pdf: no firebase settings found for id=%s; using defaults",
+                    student_id)
 
         if filename.lower().endswith(".pdf"):
             try:
@@ -366,13 +340,16 @@ def upload_pdf():
                 uploaded_file.save(filepath)
                 logger.info("upload_pdf: saved file to %s", filepath)
                 result_html = process_pdf(filepath, firebase_settings)
-                logger.info("upload_pdf: process_pdf completed for %s", filepath)
+                logger.info("upload_pdf: process_pdf completed for %s",
+                            filepath)
                 return result_html
             except Exception as e:
-                logger.exception("upload_pdf: error processing uploaded file %s", filename)
+                logger.exception(
+                    "upload_pdf: error processing uploaded file %s", filename)
                 return f"処理中にエラーが発生しました: {e}", 500
         else:
-            logger.warning("upload_pdf: uploaded file is not a PDF: %s", filename)
+            logger.warning("upload_pdf: uploaded file is not a PDF: %s",
+                           filename)
             return "PDFファイルをアップロードしてください。"
 
     logger.debug("upload_pdf: GET request — rendering upload page")
@@ -381,29 +358,33 @@ def upload_pdf():
 
 @app.route('/outputs/<path:filepath>')
 def serve_output_file(filepath):
-    logger.info("serve_output_file: request for %s", filepath)
-    safe_path = os.path.normpath(filepath)
-    full_path = os.path.join(OUTPUT_FOLDER, safe_path)
-    full_path = os.path.abspath(full_path)
-    output_folder_abs = os.path.abspath(OUTPUT_FOLDER)
-
-    if not full_path.startswith(output_folder_abs + os.path.sep) and full_path != output_folder_abs:
-        logger.warning("serve_output_file: attempted path traversal: %s", filepath)
-        return "不正なパスです", 400
-
-    if not os.path.isfile(full_path):
-        logger.info("serve_output_file: file not found: %s", full_path)
-        return "ファイルが見つかりません。", 404
-
     try:
-        logger.info("serve_output_file: sending file %s", full_path)
+        logger.info(f"serve_output_file: request for {filepath}")
+        safe_path = os.path.normpath(filepath)
+        full_path = os.path.join(OUTPUT_FOLDER, safe_path)
+        full_path = os.path.abspath(full_path)
+        output_folder_abs = os.path.abspath(OUTPUT_FOLDER)
+
+        if not full_path.startswith(output_folder_abs + os.path.sep
+                                    ) and full_path != output_folder_abs:
+            return jsonify({"message": "不正なパスです"}), 400
+
+        if not os.path.isfile(full_path):
+            return jsonify({"message": "ファイルが見つかりません。"}), 404
+
+        logger.info(f"serve_output_file: sending file {full_path}")
         return send_file(full_path, as_attachment=True)
+
     except Exception as e:
-        logger.exception("serve_output_file: error sending file %s", full_path)
-        return f"ファイル送信中にエラーが発生しました: {e}", 500
+        logger.exception("ファイル送信中にエラーが発生しました")
+        return jsonify({"message": "内部エラーが発生しました。ログをご確認ください。"}), 500
 
 
-def convert_neo_to_html(neo_content: str, font_size=16, line_height=1.6, font_select="IPAexGothic", app_root=".") -> str:
+def convert_neo_to_html(neo_content: str,
+                        font_size=16,
+                        line_height=1.6,
+                        font_select="IPAexGothic",
+                        app_root=".") -> str:
     """
     NEOタグ形式テキストをHTMLへ変換し、フォント・行間・サイズを反映する
     """
@@ -440,8 +421,7 @@ def convert_neo_to_html(neo_content: str, font_size=16, line_height=1.6, font_se
             text_content = text_match.group(1).strip() if text_match else ""
             html_lines.append(
                 f'<p style="font-family:{current_font}; font-size:{current_size}px; font-weight:{current_weight}; line-height:{current_line_height};">'
-                f'{html.escape(text_content)}</p>'
-            )
+                f'{html.escape(text_content)}</p>')
 
         # 行間設定
         elif line.startswith("[行間]"):
@@ -452,10 +432,12 @@ def convert_neo_to_html(neo_content: str, font_size=16, line_height=1.6, font_se
 
         # 画像挿入
         elif line.startswith("[画像:"):
-            img_match = re.match(r"\[画像:(.*?):([\d\.]+):([\d\.]+):([\d\.]+):([\d\.]+)\]", line)
+            img_match = re.match(
+                r"\[画像:(.*?):([\d\.]+):([\d\.]+):([\d\.]+):([\d\.]+)\]", line)
             if img_match:
                 img_path = img_match.group(1)
-                img_rel_path = img_path.replace(app_root, "").replace("/home/runner/workspace", "").lstrip("/")
+                img_rel_path = img_path.replace(app_root, "").replace(
+                    "/home/runner/workspace", "").lstrip("/")
                 img_width = img_match.group(4)
                 img_height = img_match.group(5)
                 html_lines.append(
@@ -466,8 +448,7 @@ def convert_neo_to_html(neo_content: str, font_size=16, line_height=1.6, font_se
         else:
             html_lines.append(
                 f'<p style="font-family:{current_font}; font-size:{current_size}px; font-weight:{current_weight}; line-height:{current_line_height};">'
-                f'{html.escape(line)}</p>'
-            )
+                f'{html.escape(line)}</p>')
 
     # HTML全体
     html_output = f"""
@@ -499,7 +480,10 @@ def convert_neo_to_html(neo_content: str, font_size=16, line_height=1.6, font_se
     return html_output
 
 
-def create_pdf_with_weasyprint(neo_content, output_path, app_root, firebase_settings=None):
+def create_pdf_with_weasyprint(neo_content,
+                               output_path,
+                               app_root,
+                               firebase_settings=None):
     """
     neo_content を解析して HTML を作り、必要なフォントをすべて @font-face で定義して
     WeasyPrint に渡して PDF を生成する（画像は file:// 経由で埋め込み）。
@@ -523,7 +507,8 @@ def create_pdf_with_weasyprint(neo_content, output_path, app_root, firebase_sett
             path = get_font_path(app_root, fname)
             if not path:
                 # フォントが見つからなければ ipaex を fallback として使う
-                path = get_font_path(app_root, "IPAex明朝") or get_font_path(app_root, "IPAexゴシック")
+                path = get_font_path(app_root, "IPAex明朝") or get_font_path(
+                    app_root, "IPAexゴシック")
             if path:
                 # file:// フルパスで指定
                 font_face_rules.append(
@@ -548,19 +533,24 @@ def create_pdf_with_weasyprint(neo_content, output_path, app_root, firebase_sett
             if line.startswith("[行間]"):
                 # 任意処理：行間を CSS 単位に変換したい場合はここで current_lineheight に格納
                 try:
-                    current_lineheight = float(line.replace("[行間]", "").strip())
+                    current_lineheight = float(
+                        line.replace("[行間]", "").strip())
                 except:
                     current_lineheight = None
                 continue
 
             # 画像タグ
             if line.startswith("[画像:"):
-                parts = re.findall(r"\[画像:(.*?):([\d\.]+):([\d\.]+):([\d\.]+):([\d\.]+)\]", line)
+                parts = re.findall(
+                    r"\[画像:(.*?):([\d\.]+):([\d\.]+):([\d\.]+):([\d\.]+)\]",
+                    line)
                 if parts:
                     img_path, x, y, w, h = parts[0]
                     # 画像はローカルファイル経由で埋め込む（WeasyPrint が file:// をサポート）
                     img_file_url = f"file://{os.path.abspath(img_path)}"
-                    html_blocks.append(f'<div style="text-align:center; margin: 1em 0;"><img src="{img_file_url}" style="max-width:90%;"></div>')
+                    html_blocks.append(
+                        f'<div style="text-align:center; margin: 1em 0;"><img src="{img_file_url}" style="max-width:90%;"></div>'
+                    )
                 continue
 
             # フォント/サイズ/ウェイトタグを探す
@@ -573,9 +563,14 @@ def create_pdf_with_weasyprint(neo_content, output_path, app_root, firebase_sett
                 continue
 
             # 決定したフォント情報を使って p タグを作る
-            used_font = font_match.group(1).strip() if font_match else (firebase_settings.get("fontSelect") if firebase_settings else "IPAexGothic")
-            used_size = size_match.group(1).strip() if size_match else (str(firebase_settings.get("fontSize")) if firebase_settings else "16")
-            used_weight = weight_match.group(1).strip() if weight_match else "normal"
+            used_font = font_match.group(1).strip() if font_match else (
+                firebase_settings.get("fontSelect")
+                if firebase_settings else "IPAexGothic")
+            used_size = size_match.group(1).strip() if size_match else (
+                str(firebase_settings.get("fontSize"))
+                if firebase_settings else "16")
+            used_weight = weight_match.group(
+                1).strip() if weight_match else "normal"
 
             # line-height の反映（もし current_lineheight があれば）
             lh_css = "line-height:1.6;"
@@ -789,8 +784,7 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
         neo_content,
         recreated_pdf_path,
         app_root,
-        firebase_settings=firebase_settings
-    )
+        firebase_settings=firebase_settings)
     recreated_pdf_url = os.path.join(basename, recreated_pdf_filename).replace(
         "\\", "/") if pdf_ok else ""
     if not pdf_ok:
@@ -799,30 +793,29 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
         download_html = "<p style='color:red;'>PDFの再構成に失敗しました。</p>"
     else:
         print("✅ PDF再構成成功:", recreated_pdf_path)
-        recreated_pdf_url = os.path.join(basename, recreated_pdf_filename).replace("\\", "/")
+        recreated_pdf_url = os.path.join(basename,
+                                         recreated_pdf_filename).replace(
+                                             "\\", "/")
         download_html = (
             f'<div class="download-section"><h3>再構成されたPDF</h3>'
             f'<a href="/outputs/{html.escape(recreated_pdf_url)}" '
-            f'class="action-link" download>ダウンロード</a></div>'
-        )
+            f'class="action-link" download>ダウンロード</a></div>')
 
     # --- NEOテキスト生成（追加） ---
     extracted_text = "".join(neo)
     neo_text = extracted_text
 
-    font_size = firebase_settings.get("fontSize", 16) if firebase_settings else 16
-    line_height = firebase_settings.get("lineHeight", 1.6) if firebase_settings else 1.6
-    font_select = firebase_settings.get("fontSelect", "IPAexGothic") if firebase_settings else "IPAexGothic"
+    font_size = firebase_settings.get("fontSize",
+                                      16) if firebase_settings else 16
+    line_height = firebase_settings.get("lineHeight",
+                                        1.6) if firebase_settings else 1.6
+    font_select = firebase_settings.get(
+        "fontSelect", "IPAexGothic") if firebase_settings else "IPAexGothic"
 
     # --- HTML生成 ---
-    styled_neo_html = convert_neo_to_html(
-        neo_text,
-        font_size,
-        line_height,
-        font_select,
-        app_root
-    )
-    
+    styled_neo_html = convert_neo_to_html(neo_text, font_size, line_height,
+                                          font_select, app_root)
+
     image_gallery_html = "".join(
         f'<a href="/outputs/{html.escape(url)}" target="_blank">'
         f'<img src="/outputs/{html.escape(url)}" alt="image"></a>'
@@ -833,18 +826,16 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
         f'<a href="/outputs/{html.escape(recreated_pdf_url)}" class="action-link" download>ダウンロード</a></div>'
         if pdf_ok else "")
 
-    return render_template(
-        "result.html",
-        pdf_name=os.path.basename(pdf_path),
-        dir_name=os.path.abspath(dir_name),
-        download_html=download_html,
-        styled_neo_html=styled_neo_html,
-        neo_content=neo_content,
-        og_tagged_content=og_tagged_content,
-        sorted_content=sorted_content,
-        imgs=imgs,
-        image_gallery_html=image_gallery_html
-    )
+    return render_template("result.html",
+                           pdf_name=os.path.basename(pdf_path),
+                           dir_name=os.path.abspath(dir_name),
+                           download_html=download_html,
+                           styled_neo_html=styled_neo_html,
+                           neo_content=neo_content,
+                           og_tagged_content=og_tagged_content,
+                           sorted_content=sorted_content,
+                           imgs=imgs,
+                           image_gallery_html=image_gallery_html)
 
 
 if __name__ == "__main__":
