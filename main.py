@@ -19,6 +19,8 @@ import tempfile
 import html
 import html as pyhtml  # html.escapeを複数箇所で用途分けしてるから別名でも保持しとく
 import json
+from datetime import datetime, timedelta
+import shutil
 
 # PDF操作関連
 import pymupdf as fitz  # PyMuPDFのfitz（fitzで動かなくなる問題解決）
@@ -33,8 +35,98 @@ from reportlab.pdfbase.cidfonts import UnicodeCIDFont  # 日本語フォント�
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-#デバッグ関連
+# デバッグ関連
 import logging
+from logging.handlers import RotatingFileHandler
+
+# ログ設定
+def setup_logging(days_to_keep: int = 7):
+    """
+    ログを logs/YYYY-MM-DD/app.log に出力し、起動時に古いログ（日付フォルダ）を削除します。
+    days_to_keep: 残す日数（デフォルト7）
+    """
+    # ベース logs ディレクトリ
+    base_log_dir = os.environ.get("LOG_BASE_DIR", "logs")
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_dir = os.path.join(base_log_dir, today_str)
+    os.makedirs(today_dir, exist_ok=True)
+
+    log_file_path = os.path.join(today_dir, "app.log")
+
+    # ロガー名
+    main_logger_name = "pdf_remaker"
+
+    # ログフォーマッタ
+    log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s - %(message)s")
+
+    # コンソールハンドラ
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+
+    # ファイルハンドラ（ローテーション）
+    file_handler = RotatingFileHandler(log_file_path, maxBytes=1_000_000, backupCount=5, encoding="utf-8")
+    file_handler.setFormatter(log_formatter)
+
+    # ルートロガーの重複登録を防ぐ（既にセットしているハンドラを消す）
+    logger = logging.getLogger(main_logger_name)
+    logger.setLevel(logging.INFO)
+    # remove existing handlers to avoid duplicate logs on reload
+    if logger.handlers:
+        for h in logger.handlers[:]:
+            logger.removeHandler(h)
+
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
+    # Firestore専用ロガー（同じハンドラを共有）
+    firestore_logger = logging.getLogger("pdfremaker.firestore")
+    firestore_logger.setLevel(logging.INFO)
+    # clear handlers and add
+    if firestore_logger.handlers:
+        for h in firestore_logger.handlers[:]:
+            firestore_logger.removeHandler(h)
+    firestore_logger.addHandler(console_handler)
+    firestore_logger.addHandler(file_handler)
+
+    # 起動時に古いログフォルダをクリーンアップ
+    cleanup_old_logs(base_log_dir, days_to_keep, logger)
+
+    return logger, firestore_logger
+
+
+def cleanup_old_logs(base_dir: str, days_to_keep: int, logger_obj):
+    """
+    base_dir 内の YYYY-MM-DD 形式フォルダをチェックし、days_to_keep 日より古ければ削除する。
+    """
+    if not os.path.isdir(base_dir):
+        logger_obj.info("cleanup_old_logs: no logs dir yet (%s)", base_dir)
+        return
+
+    now = datetime.now()
+    cutoff = now - timedelta(days=days_to_keep)
+    for name in os.listdir(base_dir):
+        path = os.path.join(base_dir, name)
+        if not os.path.isdir(path):
+            continue
+        try:
+            folder_date = datetime.strptime(name, "%Y-%m-%d")
+        except ValueError:
+            # 名前が日付形式でない場合はスキップ
+            continue
+        if folder_date < cutoff:
+            try:
+                shutil.rmtree(path)
+                logger_obj.info("cleanup_old_logs: removed old log folder %s", path)
+            except Exception as e:
+                logger_obj.exception("cleanup_old_logs: failed to remove %s: %s", path, e)
+
+# days to keep can be overridden by environment variable LOG_DAYS_TO_KEEP
+try:
+    days_to_keep = int(os.environ.get("LOG_DAYS_TO_KEEP", "7"))
+except ValueError:
+    days_to_keep = 7
+
+logger, firestore_logger = setup_logging(days_to_keep=days_to_keep)
 
 # プログラム起動のあいさつ
 print("(;^ω^)起動中...")
@@ -77,58 +169,90 @@ def get_font_path(app_root, font_family_name="IPAexGothic"):
         # ここでフォールバック先を fonts フォルダに限定
         fallback_path = os.path.join(app_root, "fonts", "ipaexg.ttf")
         if os.path.exists(fallback_path):
-            print(f"✅ フォントファイルが見つかりました: {fallback_path}")
+            logger.info(f"✅ フォントファイルが見つかりました: {fallback_path}")
             return fallback_path
         else:
-            print(f"⚠️ フォントファイルが存在しません: {fallback_path}")
+            logger.warning(f"⚠️ フォントファイルが存在しません: {fallback_path}")
             return None
     return font_path
 
 
 # 関数を呼び出す
 font_path = get_font_path(app_root, "IPAexGothic")
-font_url = path2url(font_path)
+font_url = path2url(font_path) if font_path else None
 
 # Firebaseを初期化
-service_key_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-if service_key_json:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w") as temp_file:
-        temp_file.write(service_key_json)
-        temp_file_path = temp_file.name
-    cred = credentials.Certificate(temp_file_path)
-    firebase_admin.initialize_app(cred)
-else:
-    cred = credentials.Certificate("serviceAccountKey.json")
-    firebase_admin.initialize_app(cred)
+try:
+    service_key_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if service_key_json:
+        # Render環境では環境変数から秘密鍵を取得
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w") as temp_file:
+            temp_file.write(service_key_json)
+            temp_file_path = temp_file.name
+        cred = credentials.Certificate(temp_file_path)
+        firebase_admin.initialize_app(cred)
+        logger.info("✅ Firebase初期化: 環境変数から読み込み成功")
+    else:
+        # ローカル環境用: ファイルから読み込み
+        cred = credentials.Certificate("serviceAccountKey.json")
+        firebase_admin.initialize_app(cred)
+        logger.info("✅ Firebase初期化: serviceAccountKey.jsonから読み込み成功")
 
-db = firestore.client()
-config_ref = db.collection("messages")
+    db = firestore.client()
+    config_ref = db.collection("messages")
+    logger.info("✅ Firestore接続成功")
+
+except Exception as e:
+    logger.critical(f"Firebase初期化エラー: {e}", exc_info=True)
+    raise SystemExit("Firebase初期化に失敗しました。")
 
 
 def get_firestore_config(user_id="default_user"):
-    doc = config_ref.document(user_id).get()
-    if doc.exists:
-        return doc.to_dict()
-    else:
-        default_config = {
+    logger.info("get_firestore_config: loading config for user_id=%s", user_id)
+    try:
+        doc = config_ref.document(user_id).get()
+        if doc.exists:
+            data = doc.to_dict()
+            logger.debug("get_firestore_config: found document %s -> %s", user_id, data)
+            return data
+        else:
+            # Firestoreにまだ設定がない場合、デフォルトを作成
+            default_config = {
+                "fontSize": 16,
+                "lineHeight": 1.6,
+                "fontSelect": "Kosugi Maru"
+            }
+            config_ref.document(user_id).set(default_config)
+            logger.info("get_firestore_config: created default config for new user_id=%s", user_id)
+            return default_config
+    except Exception as e:
+        logger.exception("get_firestore_config: Firestore access failed for user_id=%s", user_id)
+        # エラー時には安全なデフォルトを返す
+        return {
             "fontSize": 16,
             "lineHeight": 1.6,
             "fontSelect": "Kosugi Maru"
         }
-        config_ref.document(user_id).set(default_config)
-        return default_config
 
 
 def get_document(collection_name, doc_id):
     if db is None:
-        print("⚠️ Firestoreが初期化されていません")
+        logger.error("get_document: Firestore client is not initialized.")
         return None
+
+    logger.info("get_document: loading document '%s' from collection '%s'", doc_id, collection_name)
     try:
         doc_ref = db.collection(collection_name).document(doc_id)
         docf = doc_ref.get()
-        return docf.to_dict() if docf.exists else None
+        if docf.exists:
+            data = docf.to_dict()
+            logger.debug("get_document: found document %s -> %s", doc_id, data)
+            return data
+        else:
+            logger.warning("get_document: document not found (collection=%s, id=%s)", collection_name, doc_id)
+            return None
     except Exception as e:
-        print(f"⚠️ Firestoreアクセス失敗: {e}")
+        logger.exception("get_document: Firestore access failed (collection=%s, id=%s)", collection_name, doc_id)
         return None
 
 
@@ -143,7 +267,6 @@ UPLOAD_FOLDER = os.path.join(app.root_path, "uploads")
 OUTPUT_FOLDER = os.path.join(app.root_path, "output")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-
 
 # 戻る
 @app.route('/return')
@@ -160,6 +283,9 @@ def edit_page():
 @app.route("/update_firestore", methods=["POST"])
 def update_firestore():
     data = request.get_json()
+    logger.info("update_firestore called")
+    logger.debug("payload: %s", data)
+
     doc_id = data.get("id")
     name = data.get("name")
     number = data.get("number")
@@ -168,30 +294,42 @@ def update_firestore():
     font_select = data.get("fontSelect")
 
     if not doc_id:
+        logger.warning("update_firestore: missing id in payload")
         return jsonify({"message": "IDが指定されていません。"}), 400
 
-    db = firestore.client()
-    db.collection("messages").document(doc_id).set({
-        "id": doc_id,
-        "name": name,
-        "number": number,
-        "fontSize": font_size,
-        "lineHeight": line_height,
-        "fontSelect": font_select
-    })
-
-    return jsonify({"message": f"{doc_id} の設定を登録しました！"})
+    try:
+        db = firestore.client()
+        db.collection("messages").document(doc_id).set({
+            "id": doc_id,
+            "name": name,
+            "number": number,
+            "fontSize": font_size,
+            "lineHeight": line_height,
+            "fontSelect": font_select
+        })
+        logger.info("Firestore updated for id=%s", doc_id)
+        return jsonify({"message": f"{doc_id} の設定を登録しました！"})
+    except Exception as e:
+        logger.exception("update_firestore: Firestore書き込み失敗 for id=%s", doc_id)
+        return jsonify({"message": "Firestore更新エラー"}), 500
 
 
 # Firestoreのメッセージ取得
 @app.route("/get_message", methods=["GET"])
 def get_message_api():
     doc_id = request.args.get("id", "").strip()
+    logger.info("get_message called for id=%s", doc_id)
+
     if not doc_id:
+        logger.warning("get_message: no id provided")
         return jsonify({"error": "IDが指定されていません"}), 400
+
     data = get_document("messages", doc_id)
     if not data:
+        logger.info("get_message: id not found: %s", doc_id)
         return jsonify({"error": f"ID '{doc_id}' は存在しません"}), 404
+
+    logger.info("get_message: found config for id=%s", doc_id)
     return jsonify({
         k: data.get(k, "N/A")
         for k in ["fontSelect", "fontSize", "lineHeight"]
@@ -201,62 +339,67 @@ def get_message_api():
 @app.route("/", methods=["GET", "POST"])
 def upload_pdf():
     if request.method == "POST":
+        logger.info("upload_pdf: POST request received")
         if "file" not in request.files or not request.files["file"].filename:
+            logger.warning("upload_pdf: no file in request")
             return "ファイルが選択されていません。"
 
         uploaded_file = request.files["file"]
-        filename = uploaded_file.filename or ""  # None対策
+        filename = uploaded_file.filename or ""
+        logger.info("upload_pdf: uploaded filename=%s", filename)
 
         student_id = request.form.get("student_id", "").strip()
-        firebase_settings = None  # 未定義エラー防止の初期化
+        logger.info("upload_pdf: student_id=%s", student_id or "<none>")
+        firebase_settings = None
 
         if student_id:
             firebase_settings = get_document("messages", student_id)
             if firebase_settings:
-                app.logger.info(
-                    f"ID '{student_id}' の設定を適用します: {firebase_settings}")
+                logger.info("upload_pdf: applying firebase settings for id=%s", student_id)
             else:
-                app.logger.info(
-                    f"ID '{student_id}' は見つかりませんでした。デフォルト設定で処理します。")
+                logger.info("upload_pdf: no firebase settings found for id=%s; using defaults", student_id)
 
         if filename.lower().endswith(".pdf"):
-            filename = secure_filename(filename)
-            filepath = os.path.join(UPLOAD_FOLDER, filename)
-            uploaded_file.save(filepath)
-            result_html = process_pdf(filepath, firebase_settings)
-            return result_html
+            try:
+                filename = secure_filename(filename)
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                uploaded_file.save(filepath)
+                logger.info("upload_pdf: saved file to %s", filepath)
+                result_html = process_pdf(filepath, firebase_settings)
+                logger.info("upload_pdf: process_pdf completed for %s", filepath)
+                return result_html
+            except Exception as e:
+                logger.exception("upload_pdf: error processing uploaded file %s", filename)
+                return f"処理中にエラーが発生しました: {e}", 500
         else:
+            logger.warning("upload_pdf: uploaded file is not a PDF: %s", filename)
             return "PDFファイルをアップロードしてください。"
 
+    logger.debug("upload_pdf: GET request — rendering upload page")
     return render_template("upload.html", page_name="upload")
 
 
 @app.route('/outputs/<path:filepath>')
 def serve_output_file(filepath):
-    """
-    filepath: URLパス部分（例: mypdf/mypage.pdf や basename/mypage.png）
-    出力フォルダ（OUTPUT_FOLDER）配下のファイルのみを返す。安全チェックを厳密に行う。
-    """
-
-    safe_path = os.path.normpath(filepath)  # 正規化（これで .. などは取り除かれる）
-    full_path = os.path.join(OUTPUT_FOLDER, safe_path)  # 実際のファイルパスを構成
-
-    # 重要: 絶対パスにしてOUTPUT_FOLDERの下にあることを確認（ディレクトリ脱出防止）
+    logger.info("serve_output_file: request for %s", filepath)
+    safe_path = os.path.normpath(filepath)
+    full_path = os.path.join(OUTPUT_FOLDER, safe_path)
     full_path = os.path.abspath(full_path)
     output_folder_abs = os.path.abspath(OUTPUT_FOLDER)
-    if not full_path.startswith(output_folder_abs + os.path.sep
-                                ) and full_path != output_folder_abs:
+
+    if not full_path.startswith(output_folder_abs + os.path.sep) and full_path != output_folder_abs:
+        logger.warning("serve_output_file: attempted path traversal: %s", filepath)
         return "不正なパスです", 400
 
-    # ファイルが存在するか確認
     if not os.path.isfile(full_path):
+        logger.info("serve_output_file: file not found: %s", full_path)
         return "ファイルが見つかりません。", 404
 
-    # 安全に送信（ダウンロードとして返す）
     try:
+        logger.info("serve_output_file: sending file %s", full_path)
         return send_file(full_path, as_attachment=True)
     except Exception as e:
-        app.logger.exception("ファイル送信でエラー")
+        logger.exception("serve_output_file: error sending file %s", full_path)
         return f"ファイル送信中にエラーが発生しました: {e}", 500
 
 
