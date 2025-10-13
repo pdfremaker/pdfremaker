@@ -115,8 +115,22 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: docId, name, number, lineHeight, fontSize, fontSelect: fontSelectValue })
         });
-        const data = await res.json();
-        alert(data.message);
+        try {
+          const res = await fetch("/update_firestore", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: docId, name, number, lineHeight, fontSize, fontSelect: fontSelectValue })
+          });
+
+          if (!res.ok) {
+            throw new Error(`HTTPエラー ${res.status}`);
+          }
+
+          const data = await res.json();
+          alert(data.message || "Firestore登録が完了しました。");
+        } catch (e) {
+          alert("Firestore登録に失敗しました: " + e.message);
+        }
       } catch (e) {
         alert("通信エラー: " + e.message);
       }

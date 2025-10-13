@@ -1,18 +1,27 @@
-# Import the necessary modules
+# Flask関連
 from flask import Flask, request, jsonify, send_file, render_template
-import html
-import json
-import os
-import tempfile
-import re
 from werkzeug.utils import secure_filename
-import pymupdf as fitz  # PyMuPDF
+
+# 標準ライブラリ
+import os
+import re
+import tempfile
+import html
+import html as pyhtml  # html.escapeを複数箇所で用途分けしてるから別名でも保持しとく
+import json
+
+# PDF操作関連
+import pymupdf as fitz  # PyMuPDFのfitz（fitzで動かなくなる問題解決）
+from weasyprint import HTML, CSS
+from weasyprint.urls import path2url  # フォントファイルのURL変換で使用
+
+# フォント・テキスト描画関連
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont  # 日本語フォントを使用可に
+
+# Firebase関連
 import firebase_admin
 from firebase_admin import credentials, firestore
-from weasyprint import HTML
-from weasyprint.urls import path2url  # ローカルファイルのパスをURLに変換するために必要
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 
 # プログラム起動のあいさつ
 print("(;^ω^)起動中...")
@@ -137,15 +146,28 @@ def edit_page():
 
 @app.route("/update_firestore", methods=["POST"])
 def update_firestore():
-    data = request.json
-    user_id = data.get("user_id", "default_user")
-    update_data = {
-        "fontSize": data.get("fontSize", 16),
-        "lineHeight": data.get("lineHeight", 1.6),
-        "fontSelect": data.get("fontSelect", "Kosugi Maru"),
-    }
-    config_ref.document(user_id).set(update_data)
-    return jsonify({"status": "ok", "updated": update_data})
+    data = request.get_json()
+    doc_id = data.get("id")
+    name = data.get("name")
+    number = data.get("number")
+    font_size = data.get("fontSize")
+    line_height = data.get("lineHeight")
+    font_select = data.get("fontSelect")
+
+    if not doc_id:
+        return jsonify({"message": "IDが指定されていません。"}), 400
+
+    db = firestore.client()
+    db.collection("messages").document(doc_id).set({
+        "id": doc_id,
+        "name": name,
+        "number": number,
+        "fontSize": font_size,
+        "lineHeight": line_height,
+        "fontSelect": font_select
+    })
+
+    return jsonify({"message": f"{doc_id} の設定を登録しました！"})
 
 
 # Firestoreのメッセージ取得
@@ -229,7 +251,6 @@ def convert_neo_to_html(neo_content: str, font_size=16, line_height=1.6, font_se
     """
     NEOタグ形式テキストをHTMLへ変換し、フォント・行間・サイズを反映する
     """
-    import re, html
 
     html_lines = []
     current_font = font_select
@@ -329,8 +350,6 @@ def create_pdf_with_weasyprint(neo_content, output_path, app_root, firebase_sett
     """
     print("=== NEO解析内容 (先頭800文字) ===")
     print(neo_content[:800])
-    from weasyprint import HTML, CSS
-    import re, os, html as pyhtml
 
     try:
         # --- 1) 使われているフォント名を収集 ---
