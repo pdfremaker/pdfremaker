@@ -1,0 +1,46 @@
+/* === page_upload.css === */
+/* upload.html専用の微調整 */
+
+.container {
+  max-width: 720px;
+}
+
+h1 {
+  font-size: 1.8rem;
+}
+
+h2 {
+  font-size: 1.3rem;
+  border-bottom: 2px solid #007bff;
+  display: inline-block;
+  padding-bottom: 4px;
+}
+
+#student-info h3 {
+  margin-top: 0;
+  color: #007bff;
+}
+
+#student-info p {
+  margin: 4px 0;
+}
+
+input[type="file"] {
+  border: 1px dashed #999;
+  padding: 12px;
+  background-color: #fafafa;
+}
+
+input[type="file"]:hover {
+  background-color: #f1f1f1;
+}
+
+/* スマホ対応 */
+@media (max-width: 600px) {
+  .container {
+    padding: 20px;
+  }
+  h1 {
+    font-size: 1.4rem;
+  }
+}

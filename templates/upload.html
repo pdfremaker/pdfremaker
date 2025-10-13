@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDFアップローダー</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/page_upload.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>PDFアップローダー</h1>
+    <p>生徒IDを入力して設定を反映し、PDFをアップロードしてください。</p>
+
+    <form method="post" enctype="multipart/form-data">
+      <div class="align-right-container">
+        <a href="{{ url_for('edit_page') }}" class="button-link"><b>生徒設定編集画面へ</b></a>
+      </div>
+      <h2 class="centered-heading">1. 生徒設定の選択</h2>
+
+      <input type="text" id="student-id" name="student_id" placeholder="生徒IDを入力してください">
+      <input type="button" id="fetch-button" value="データ取得 & 確認 & 反映">
+      <div id="student-info">設定情報をここに表示します</div>
+
+      <h2 style="margin-top: 2em;">2. PDFファイルのアップロード</h2>
+      <input type="file" name="file" accept=".pdf" required>
+      <input type="submit" value="アップロードして処理">
+    </form>
+  </div>
+
+  <script>
+    document.getElementById("fetch-button").addEventListener("click", async function() {
+      const id = document.getElementById("student-id").value.trim();
+      if (!id) { alert("生徒IDを入力してください。"); return; }
+
+      try {
+        const res = await fetch(`/get_message?id=${encodeURIComponent(id)}`);
+        const data = await res.json();
+        const div = document.getElementById("student-info");
+
+        if (data.error) {
+          div.innerHTML = `<p style="color:red;">${data.error}</p>`;
+        } else {
+          div.innerHTML = `
+            <h3>現在の設定</h3>
+            <p><strong>ID:</strong> ${data.id}</p>
+            <p><strong>フォント:</strong> ${data.fontSelect}</p>
+            <p><strong>文字サイズ:</strong> +${data.fontSize}</p>
+            <p><strong>行間:</strong> +${data.lineHeight}</p>
+            <p style="color:green; font-weight:bold;">設定が確認できました！</p>`;
+        }
+      } catch (e) {
+        alert("通信エラー: " + e.message);
+      }
+    });
+  </script>
+</body>
+</html>

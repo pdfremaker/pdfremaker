@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Firestore 設定ページ</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/page_edit.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>Firestore 生徒設定エディタ</h1>
+    <p>生徒のフォント・文字サイズ・行間などを設定します。</p>
+
+    <div class="align-right-container">
+      <a href="/" class="button-link"><b>再構成画面へ戻る</b></a>
+    </div>
+
+    <form>
+      <section>
+        <h2>行間スライダー</h2>
+        <label for="lineSlider">行間: <span id="lineValue">1.0</span></label><br>
+        <input type="range" id="lineSlider" min="1" max="2" step="0.1" value="1">
+      </section>
+
+      <section>
+        <h2>文字サイズスライダー</h2>
+        <label for="fontSizeSlider">文字サイズ: <span id="sizeValue">40</span>px</label><br>
+        <input type="range" id="fontSizeSlider" min="20" max="60" value="40">
+      </section>
+
+      <section>
+        <h2>フォントを選択</h2>
+        <select id="fontSelect">
+          <option value="Noto Sans JP">ゴシック</option>
+          <option value="Noto Serif JP">明朝</option>
+          <option value="Kosugi Maru">丸ゴシック</option>
+          <option value="IPAexゴシック">IPAexゴシック</option>
+          <option value="IPAex明朝">IPAex明朝</option>
+          <option value="Verdana, sans-serif">Verdana（代替英字フォント）</option>
+        </select>
+      </section>
+
+      <div id="text" class="preview-box">
+        こんにちは<br>おはよう
+      </div>
+
+      <section>
+        <h2>設定確認</h2>
+        <button type="button" id="showBtn">確認</button>
+        <div id="message" class="message-box">ここに設定内容が表示されます</div>
+      </section>
+
+      <section>
+        <h2>Firestore 登録</h2>
+        <input type="text" id="docId" placeholder="IDを入力">
+        <input type="text" id="name" placeholder="名前を入力">
+        <input type="number" id="number" placeholder="出席番号を入力">
+        <button type="button" id="createBtn">Firestoreに登録</button>
+      </section>
+    </form>
+  </div>
+
+  <script>
+    const baseLine = 40;
+    const maxDiff = 20;
+
+    const text = document.getElementById("text");
+    const lineSlider = document.getElementById("lineSlider");
+    const fontSizeSlider = document.getElementById("fontSizeSlider");
+    const fontSelect = document.getElementById("fontSelect");
+    const lineValue = document.getElementById("lineValue");
+    const sizeValue = document.getElementById("sizeValue");
+    const message = document.getElementById("message");
+
+    function updateStyle() {
+      const sliderValue = Number(lineSlider.value);
+      const lineHeight = baseLine + sliderValue * maxDiff;
+      lineValue.textContent = sliderValue.toFixed(1);
+      sizeValue.textContent = fontSizeSlider.value;
+      text.style.lineHeight = lineHeight + "px";
+      text.style.fontSize = fontSizeSlider.value + "px";
+      text.style.fontFamily = fontSelect.value;
+    }
+
+    lineSlider.addEventListener("input", updateStyle);
+    fontSizeSlider.addEventListener("input", updateStyle);
+    fontSelect.addEventListener("change", updateStyle);
+    updateStyle();
+
+    document.getElementById("showBtn").addEventListener("click", () => {
+      const sliderValue = Number(lineSlider.value);
+      const fontSize = fontSizeSlider.value;
+      const fontFamily = fontSelect.value;
+      message.textContent = `フォント: ${fontFamily}\n文字サイズ: ${fontSize}px\n行間倍率: ${sliderValue.toFixed(1)}`;
+      message.style.display = "block";
+    });
+
+    document.getElementById("createBtn").addEventListener("click", async () => {
+      const docId = document.getElementById("docId").value.trim();
+      const name = document.getElementById("name").value.trim();
+      const number = Number(document.getElementById("number").value);
+      const lineHeight = Number(lineSlider.value);
+      const fontSize = Number(fontSizeSlider.value);
+      const fontSelectValue = fontSelect.value;
+
+      if (!docId || !name || isNaN(number)) {
+        alert("ID・名前・番号をすべて入力してください。");
+        return;
+      }
+
+      try {
+        const res = await fetch("/update_firestore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: docId, name, number, lineHeight, fontSize, fontSelect: fontSelectValue })
+        });
+        const data = await res.json();
+        alert(data.message);
+      } catch (e) {
+        alert("通信エラー: " + e.message);
+      }
+    });
+  </script>
+</body>
+</html>

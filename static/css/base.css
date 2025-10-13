@@ -1,0 +1,31 @@
+body {
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  margin: 40px;
+  background-color: #f4f4f9;
+  color: #333;
+}
+
+.container {
+  max-width: 600px;
+  margin: auto;
+  text-align: center;
+}
+
+.align-right-container {
+  text-align: right;
+  margin-bottom: 10px;
+}
+
+.button-link {
+  text-decoration: none;
+  background-color: #228b22;
+  color: white;
+  padding: 6px 10px;
+  border-radius: 6px;
+  display: inline-block;
+  transition: background-color 0.3s;
+}
+
+.button-link:hover {
+  background-color: #333;
+}

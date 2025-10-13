@@ -1,16 +1,5 @@
-"""
-replitで変更したデータをGitHubに反映させるときは次のコードをShellにコピペ
-
-git add .
-git commit -m "update"
-git push
-
-↑git commit -m ""の""の中に更新内容を書く
-別にupdateのままでもおけ丸水産
-"""
-
 # Import the necessary modules
-from flask import Flask, request, render_template_string, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, render_template
 import html
 import json
 import os
@@ -133,270 +122,17 @@ OUTPUT_FOLDER = os.path.join(app.root_path, "output")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-# PDF再構築のHTML
-HTML_FORM = """
-<!doctype html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Extractor & Rebuilder</title>
-    <style>
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; }
-        .container { max-width: 600px; margin: auto; text-align: center; }
-        h1 { color: #5a5a5a; }
-        p { color: #666; }
-        form { background: white; padding: 2em; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-top: 1em; }
-        input[type=file], input[type=text] { display: block; margin: 0 auto 1em auto; border: 1px solid #ccc; padding: 10px; border-radius: 5px; width: 95%; box-sizing: border-box;}
-        input[type=button], input[type=submit] {
-            background-color: #007bff; color: white; padding: 10px 20px;
-            border: none; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%;
-            transition: background-color 0.3s ease;
-        }
-        input[type=button]:hover, input[type=submit]:hover { background-color: #0056b3; }
-        #student-info {
-            background: #fff; padding: 20px; border-radius: 12px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-top: 20px; text-align: left;
-        }
 
-        /* 1. ボタンリンクのスタイル */
-        .button-link {
-            text-decoration: none;
-            background-color:#228b22;
-            color: white;
-            padding: 6px 6px;
-            border-radius: 5px;
-            display: inline-block;
-            transition: background-color 0.3s;
-            margin-right: 10px; /* 生徒ID入力欄との余白 */
-        }
-        .button-link:hover {
-            background-color: #333333;
-        }
-
-        /* 2. ボタンを右揃えにする親要素のスタイル */
-        .align-right-container {
-            text-align: right;
-            width: 100%;
-            margin-bottom: 10px;
-        }
-        .centered-heading {
-            text-align: center;
-        }
-    </style>
-</head>
-
-<body>
-    <div class="container">
-        <h1>PDFアップローダー</h1>
-        <p>生徒IDを入力して設定を反映し、PDFをアップロードしてください。</p>
-
-        <form method=post enctype=multipart/form-data>
-
-            <div class="align-right-container">
-                <a href="/edit" class="button-link">
-                    <b>生徒設定編集画面へ</b>
-                </a>
-            </div>
-            <h2 class="centered-heading">1. 反映する生徒設定情報の選択</h2>
-
-            <input type="text" id="student-id" name="student_id" placeholder="生徒IDを入力してください">
-            <input type="button" id="fetch-button" value="データ取得 & 確認 & 反映">
-            <div id="student-info">設定情報をここに表示します</div>
-
-            <h2 style="margin-top: 2em;">2. PDFファイルのアップロード</h2>
-            <input type=file name=file accept=".pdf" required>
-            <input type=submit value="アップロードして処理">
-        </form>
-    </div>
-    <script>
-        document.getElementById("fetch-button").addEventListener("click", async function() {
-            const id = document.getElementById("student-id").value.trim();
-            if (!id) {
-                alert("生徒IDを入力してください。");
-                return;
-            }
-
-            try {
-                const res = await fetch(`/get_message?id=${encodeURIComponent(id)}`);
-                const data = await res.json();
-                const div = document.getElementById("student-info");
-
-                if (data.error) {
-                    div.innerHTML = `<p style="color:red;">${data.error}</p>`;
-                } else {
-                    div.innerHTML = `
-                        <h3>現在の生徒設定情報（加算値）</h3>
-                        <p><strong>ID:</strong> ${data.id}</p>
-                        <p><strong>フォント（上書き）:</strong> ${data.fontSelect}</p>
-                        <p><strong>文字サイズ（追加）:</strong> +${data.fontSize}</p>
-                        <p><strong>行間（追加）:</strong> +${data.lineHeight}</p>
-                        <p style="color:green; font-weight:bold;">設定が確認できました。ファイルをアップロードしてください。</p>`;
-                }
-            } catch (e) {
-                alert("通信エラー: " + e.message);
-            }
-        });
-    </script>
-</body>
-</html>
-"""
-
-
-# Firestoreの情報変える生徒側へ行く
+# 戻る
 @app.route('/return')
 def return_page():
-    return HTML_FORM
-
-
-HTML_EDIT = """
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Firestore 設定ページ</title>
-  <style>
-    body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; }
-    .container { max-width: 600px; margin: auto; text-align: center; }
-    h1 { color: #5a5a5a; }
-    p { color: #666; }
-    form { background: white; padding: 2em; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-top: 1em; }
-    input, select, button { margin: 10px; font-size: 16px; }
-    input[type=text], input[type=number] {
-      width: 95%; padding: 10px; border-radius: 5px; border: 1px solid #ccc;
-    }
-    button, input[type=button], input[type=submit] {
-      background-color: #007bff; color: white; padding: 10px 20px;
-      border: none; border-radius: 5px; cursor: pointer; font-size: 16px; width: 100%;
-      transition: background-color 0.3s ease;
-    }
-    button:hover { background-color: #0056b3; }
-    .button-link {
-      text-decoration: none; background-color:#228b22; color: white;
-      padding: 6px 6px; border-radius: 5px; display: inline-block; transition: background-color 0.3s; margin-right: 10px;
-    }
-    .button-link:hover { background-color: #333333; }
-    #text { font-size: 40px; line-height: 40px; margin-top: 20px; }
-    #message { margin-top: 20px; font-size: 20px; display: none; white-space: pre-line; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>Firestore 生徒設定エディタ</h1>
-    <p>生徒のフォント・文字サイズ・行間などを設定します。</p>
-
-    <div class="align-right-container">
-      <a href="/" class="button-link"><b>再構成画面へ戻る</b></a>
-    </div>
-
-    <form>
-      <h2>行間スライダー</h2>
-      <label for="lineSlider">行間: <span id="lineValue">1.0</span></label><br>
-      <input type="range" id="lineSlider" min="1" max="2" step="0.1" value="1">
-
-      <h2>文字サイズスライダー</h2>
-      <label for="fontSizeSlider">文字サイズ: <span id="sizeValue">40</span>px</label><br>
-      <input type="range" id="fontSizeSlider" min="20" max="60" value="40">
-
-      <h2>フォントを選択</h2>
-      <select id="fontSelect">
-        <option value="Noto Sans JP">ゴシック</option>
-        <option value="Noto Serif JP">明朝</option>
-        <option value="Kosugi Maru">丸ゴシック</option>
-        <option value="IPAexゴシック">IPAexゴシック</option>
-        <option value="IPAex明朝">IPAex明朝</option>
-        <option value="Verdana, sans-serif">Verdana（代替英字フォント）</option>
-      </select>
-
-      <div id="text">
-        こんにちは<br>おはよう
-      </div>
-
-      <h2>設定確認</h2>
-      <button type="button" id="showBtn">確認</button>
-      <div id="message">ここに設定内容が表示されます</div>
-
-      <h2>Firestore 登録</h2>
-      <input type="text" id="docId" placeholder="IDを入力">
-      <input type="text" id="name" placeholder="名前を入力">
-      <input type="number" id="number" placeholder="出席番号を入力">
-      <br>
-      <button type="button" id="createBtn">Firestoreに登録</button>
-    </form>
-  </div>
-
-  <!-- JavaScript (Firebase SDK不要: Flask経由API呼び出し想定) -->
-  <script>
-    const baseLine = 40;
-    const maxDiff = 20;
-
-    const text = document.getElementById("text");
-    const lineSlider = document.getElementById("lineSlider");
-    const fontSizeSlider = document.getElementById("fontSizeSlider");
-    const fontSelect = document.getElementById("fontSelect");
-    const lineValue = document.getElementById("lineValue");
-    const sizeValue = document.getElementById("sizeValue");
-    const message = document.getElementById("message");
-
-    function updateStyle() {
-      const sliderValue = Number(lineSlider.value);
-      const lineHeight = baseLine + sliderValue * maxDiff;
-      lineValue.textContent = sliderValue.toFixed(1);
-      sizeValue.textContent = fontSizeSlider.value;
-      text.style.lineHeight = lineHeight + "px";
-      text.style.fontSize = fontSizeSlider.value + "px";
-      text.style.fontFamily = fontSelect.value;
-    }
-
-    lineSlider.addEventListener("input", updateStyle);
-    fontSizeSlider.addEventListener("input", updateStyle);
-    fontSelect.addEventListener("change", updateStyle);
-    updateStyle();
-
-    document.getElementById("showBtn").addEventListener("click", () => {
-      const sliderValue = Number(lineSlider.value);
-      const fontSize = fontSizeSlider.value;
-      const fontFamily = fontSelect.value;
-      message.textContent = `フォント: ${fontFamily}\\n文字サイズ: ${fontSize}px\\n行間倍率: ${sliderValue.toFixed(1)}`;
-      message.style.display = "block";
-    });
-
-    document.getElementById("createBtn").addEventListener("click", async () => {
-      const docId = document.getElementById("docId").value.trim();
-      const name = document.getElementById("name").value.trim();
-      const number = Number(document.getElementById("number").value);
-      const lineHeight = Number(lineSlider.value);
-      const fontSize = Number(fontSizeSlider.value);
-      const fontSelectValue = fontSelect.value;
-
-      if (!docId || !name || isNaN(number)) {
-        alert("ID・名前・番号をすべて入力してください。");
-        return;
-      }
-
-      try {
-        const res = await fetch("/update_firestore", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: docId, name, number, lineHeight, fontSize, fontSelect: fontSelectValue })
-        });
-        const data = await res.json();
-        alert(data.message);
-      } catch (e) {
-        alert("通信エラー: " + e.message);
-      }
-    });
-  </script>
-</body>
-</html>
-"""
+    return render_template("upload.html", page_name="upload")
 
 
 # Firestoreの情報変える生徒側へ行く
 @app.route('/edit')
 def edit_page():
-    return HTML_EDIT
+    return render_template("edit.html", page_name="edit")
 
 
 @app.route("/update_firestore", methods=["POST"])
@@ -457,7 +193,7 @@ def upload_pdf():
         else:
             return "PDFファイルをアップロードしてください。"
 
-    return render_template_string(HTML_FORM)
+    return render_template("upload.html", page_name="upload")
 
 
 @app.route('/outputs/<path:filepath>')
