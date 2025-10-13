@@ -11,9 +11,11 @@ git push
 
 # Import the necessary modules
 from flask import Flask, request, render_template_string, jsonify, send_file
-import os
 import html
 import json
+import os
+import tempfile
+import re
 from werkzeug.utils import secure_filename
 import pymupdf as fitz  # PyMuPDF
 import firebase_admin
@@ -73,24 +75,37 @@ def get_font_path(app_root, font_family_name="IPAexGothic"):
 
 
 # 関数を呼び出す
-app_root = os.path.dirname(os.path.abspath(__file__))
 font_path = get_font_path(app_root, "IPAexGothic")
 font_url = path2url(font_path)
 
 # Firebaseを初期化
-try:
-    cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-    if cred_json:
-        cred_dict = json.loads(cred_json)
-        cred = credentials.Certificate(cred_dict)
-    else:
-        cred = credentials.Certificate(
-            os.path.join(app_root, "serAccoCaMnNeMg.json"))
+service_key_json = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+if service_key_json:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w") as temp_file:
+        temp_file.write(service_key_json)
+        temp_file_path = temp_file.name
+    cred = credentials.Certificate(temp_file_path)
     firebase_admin.initialize_app(cred)
-    db = firestore.client()
-except Exception as e:
-    print(f"⚠️ Firebase初期化に失敗: {e}")
-    db = None
+else:
+    cred = credentials.Certificate("serviceAccountKey.json")
+    firebase_admin.initialize_app(cred)
+
+db = firestore.client()
+config_ref = db.collection("messages")
+
+
+def get_firestore_config(user_id="default_user"):
+    doc = config_ref.document(user_id).get()
+    if doc.exists:
+        return doc.to_dict()
+    else:
+        default_config = {
+            "fontSize": 16,
+            "lineHeight": 1.6,
+            "fontSelect": "Kosugi Maru"
+        }
+        config_ref.document(user_id).set(default_config)
+        return default_config
 
 
 def get_document(collection_name, doc_id):
@@ -201,12 +216,12 @@ HTML_FORM = """
                 alert("生徒IDを入力してください。");
                 return;
             }
-    
+
             try {
                 const res = await fetch(`/get_message?id=${encodeURIComponent(id)}`);
                 const data = await res.json();
                 const div = document.getElementById("student-info");
-    
+
                 if (data.error) {
                     div.innerHTML = `<p style="color:red;">${data.error}</p>`;
                 } else {
@@ -386,27 +401,15 @@ def edit_page():
 
 @app.route("/update_firestore", methods=["POST"])
 def update_firestore():
-    try:
-        data = request.get_json()
-        doc_id = data.get("id")
-        if not doc_id:
-            return jsonify({"message": "IDが指定されていません"}), 400
-
-        doc_ref = db.collection("messages").document(doc_id)
-        doc_ref.set({
-            "createdAt":
-            firestore.SERVER_TIMESTAMP,  # type: ignore[attr-defined]
-            "name": data.get("name"),
-            "number": data.get("number"),
-            "lineHeight": data.get("lineHeight"),
-            "fontSize": data.get("fontSize"),
-            "fontSelect": data.get("fontSelect")
-        })
-
-        return jsonify({"message": f"Firestore更新完了: {doc_id}"})
-    except Exception as e:
-        app.logger.error(f"Firestore更新エラー: {e}")
-        return jsonify({"message": f"エラー: {str(e)}"}), 500
+    data = request.json
+    user_id = data.get("user_id", "default_user")
+    update_data = {
+        "fontSize": data.get("fontSize", 16),
+        "lineHeight": data.get("lineHeight", 1.6),
+        "fontSelect": data.get("fontSelect", "Kosugi Maru"),
+    }
+    config_ref.document(user_id).set(update_data)
+    return jsonify({"status": "ok", "updated": update_data})
 
 
 # Firestoreのメッセージ取得
@@ -486,170 +489,234 @@ def serve_output_file(filepath):
         return f"ファイル送信中にエラーが発生しました: {e}", 500
 
 
-def create_styled_html(text_content, app_root, firebase_settings=None):
+def convert_neo_to_html(neo_content: str, font_size=16, line_height=1.6, font_select="IPAexGothic", app_root=".") -> str:
     """
-    NEOテキストをHTMLに変換し、Firestore設定（fontSize加算 / lineHeight倍率）を反映して出力。
+    NEOタグ形式テキストをHTMLへ変換し、フォント・行間・サイズを反映する
     """
-    lines = text_content.strip().split("\n")
-    html_out = ""
+    import re, html
 
-    # --- Firestore設定値を取得 ---
-    font_size_add = 0.0
-    line_height_factor = 1.0
-    font_override = None
+    html_lines = []
+    current_font = font_select
+    current_size = font_size
+    current_weight = "normal"
+    current_line_height = line_height
 
-    if firebase_settings:
-        try:
-            font_size_add = float(firebase_settings.get("fontSize", 0.0))
-        except Exception:
-            font_size_add = 0.0
-        try:
-            line_height_factor = float(firebase_settings.get("lineHeight", 1.0))
-        except Exception:
-            line_height_factor = 1.0
-        if firebase_settings.get("fontSelect"):
-            font_override = firebase_settings["fontSelect"]
+    # 各行を解析
+    for line in neo_content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
 
-    # --- 行単位でHTML構築 ---
-    for line in lines:
-        if line.startswith("[行間]"):
-            # 行間 → Firestore倍率を掛ける
+        # フォント指定
+        if line.startswith("[フォント:"):
+            font_match = re.search(r"\[フォント:(.*?)\]", line)
+            size_match = re.search(r"\[サイズ:(.*?)\]", line)
+            weight_match = re.search(r"\[ウェイト:(.*?)\]", line)
+            text_match = re.search(r"\](.+)", line)
+
+            if font_match:
+                current_font = font_match.group(1).strip()
+            if size_match:
+                try:
+                    current_size = float(size_match.group(1).strip())
+                except:
+                    pass
+            if weight_match:
+                current_weight = weight_match.group(1).strip()
+
+            text_content = text_match.group(1).strip() if text_match else ""
+            html_lines.append(
+                f'<p style="font-family:{current_font}; font-size:{current_size}px; font-weight:{current_weight}; line-height:{current_line_height};">'
+                f'{html.escape(text_content)}</p>'
+            )
+
+        # 行間設定
+        elif line.startswith("[行間]"):
             try:
-                sp = float(line.replace("[行間]", "").strip())
-                sp *= line_height_factor  # 倍率反映
-                html_out += f'<div style="margin-top:{sp}px;"></div>'
-            except Exception:
-                continue
+                current_line_height = float(line.replace("[行間]", "").strip())
+            except:
+                pass
 
-        elif line.startswith("[フォント:"):
-            try:
-                parts = line.split("]")
-                font_name = parts[0].split(":")[1]
-                base_size = float(parts[1].split(":")[1])
-                weight = parts[2].split(":")[1]
-                text = parts[3]
-
-                # --- Firestore反映 ---
-                size = base_size + font_size_add
-                use_font = font_override or font_name
-
-                style = (
-                    f"font-family:{use_font}; "
-                    f"font-size:{size}px; "
-                    f"font-weight:{weight}; "
-                    f"line-height:{line_height_factor:.2f};"
-                )
-                html_out += f'<p style="{style}">{html.escape(text)}</p>'
-            except Exception as e:
-                print("スタイル行解析エラー:", e)
-                continue
-
+        # 画像挿入
         elif line.startswith("[画像:"):
-            try:
-                parts = line.strip("[]").split(":")[1:]
-                if len(parts) != 5:
-                    continue
-                path, x, y, w, h = parts
-                abs_path = os.path.join(app_root, path)
-                if os.path.exists(abs_path):
-                    url = path2url(abs_path)
-                    html_out += f'<p><img src="{url}" width="{w}" height="{h}"></p>'
-                else:
-                    html_out += f'<p style="color:red;">[画像なし: {path}]</p>'
-            except Exception:
+            img_match = re.match(r"\[画像:(.*?):([\d\.]+):([\d\.]+):([\d\.]+):([\d\.]+)\]", line)
+            if img_match:
+                img_path = img_match.group(1)
+                img_rel_path = img_path.replace(app_root, "").replace("/home/runner/workspace", "").lstrip("/")
+                img_width = img_match.group(4)
+                img_height = img_match.group(5)
+                html_lines.append(
+                    f'<img src="/{img_rel_path}" style="width:{img_width}px; height:{img_height}px; display:block; margin:8px auto;">'
+                )
+
+        # 通常テキスト
+        else:
+            html_lines.append(
+                f'<p style="font-family:{current_font}; font-size:{current_size}px; font-weight:{current_weight}; line-height:{current_line_height};">'
+                f'{html.escape(line)}</p>'
+            )
+
+    # HTML全体
+    html_output = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{
+                font-family: '{font_select}';
+                font-size: {font_size}px;
+                line-height: {line_height};
+                color: #111;
+                background: #fff;
+                margin: 24px;
+                padding: 0;
+            }}
+            img {{
+                max-width: 90%;
+                border-radius: 8px;
+            }}
+        </style>
+    </head>
+    <body>
+        {''.join(html_lines)}
+    </body>
+    </html>
+    """
+
+    return html_output
+
+
+def create_pdf_with_weasyprint(neo_content, output_path, app_root, firebase_settings=None):
+    """
+    neo_content を解析して HTML を作り、必要なフォントをすべて @font-face で定義して
+    WeasyPrint に渡して PDF を生成する（画像は file:// 経由で埋め込み）。
+    """
+    print("=== NEO解析内容 (先頭800文字) ===")
+    print(neo_content[:800])
+    from weasyprint import HTML, CSS
+    import re, os, html as pyhtml
+
+    try:
+        # --- 1) 使われているフォント名を収集 ---
+        font_names = set(re.findall(r'\[フォント:(.*?)\]', neo_content))
+        # デフォルトフォントも入れておく
+        if firebase_settings and firebase_settings.get("fontSelect"):
+            font_names.add(firebase_settings.get("fontSelect"))
+        if not font_names:
+            font_names.add("IPAexGothic")
+
+        # --- 2) 各フォント名をファイルパスに解決して @font-face を作る ---
+        font_face_rules = []
+        for fname in sorted(font_names):
+            # get_font_path は既に定義されている関数を使う
+            path = get_font_path(app_root, fname)
+            if not path:
+                # フォントが見つからなければ ipaex を fallback として使う
+                path = get_font_path(app_root, "IPAex明朝") or get_font_path(app_root, "IPAexゴシック")
+            if path:
+                # file:// フルパスで指定
+                font_face_rules.append(
+                    f"@font-face {{ font-family: '{fname}'; src: url('file://{path}'); }}"
+                )
+            else:
+                print(f"⚠️ フォントファイル見つからず: {fname}")
+
+        # --- 3) HTML ブロックを作る ---
+        html_blocks = []
+        current_font = None
+        current_size = None
+        current_weight = None
+        current_lineheight = None
+
+        for raw_line in neo_content.splitlines():
+            line = raw_line.strip()
+            if not line:
                 continue
 
-        else:
-            html_out += f"<p>{html.escape(line)}</p>"
-
-    return html_out
-
-
-def create_pdf_with_weasyprint(
-    neo_content: str,
-    output_pdf_path: str,
-    app_root: str,
-    firebase_settings: dict | None = None
-):
-    try:
-        html_body = create_styled_html(neo_content, app_root, firebase_settings)
-
-        # --- Firestore 設定（ベース値に加算する方式） ---
-        base_font_family = "IPAexGothic"
-        base_font_size = 12.0  # pt
-        base_line_height = 1.6  # 倍率
-
-        font_family = base_font_family
-        font_size = f"{base_font_size:.1f}pt"
-        line_height = str(base_line_height)
-
-        if firebase_settings:
-            # フォント選択：完全上書き
-            if firebase_settings.get("fontSelect"):
-                font_family = firebase_settings["fontSelect"]
-
-            # フォントサイズ：加算適用
-            if firebase_settings.get("fontSize"):
+            # 行間はここでは無視（必要なら current_lineheight を取り込む）
+            if line.startswith("[行間]"):
+                # 任意処理：行間を CSS 単位に変換したい場合はここで current_lineheight に格納
                 try:
-                    font_size_add = float(firebase_settings["fontSize"])
-                    font_size = f"{base_font_size + font_size_add:.1f}pt"
-                except Exception:
+                    current_lineheight = float(line.replace("[行間]", "").strip())
+                except:
+                    current_lineheight = None
+                continue
+
+            # 画像タグ
+            if line.startswith("[画像:"):
+                parts = re.findall(r"\[画像:(.*?):([\d\.]+):([\d\.]+):([\d\.]+):([\d\.]+)\]", line)
+                if parts:
+                    img_path, x, y, w, h = parts[0]
+                    # 画像はローカルファイル経由で埋め込む（WeasyPrint が file:// をサポート）
+                    img_file_url = f"file://{os.path.abspath(img_path)}"
+                    html_blocks.append(f'<div style="text-align:center; margin: 1em 0;"><img src="{img_file_url}" style="max-width:90%;"></div>')
+                continue
+
+            # フォント/サイズ/ウェイトタグを探す
+            font_match = re.search(r"\[フォント:(.*?)\]", line)
+            size_match = re.search(r"\[サイズ:(.*?)\]", line)
+            weight_match = re.search(r"\[ウェイト:(.*?)\]", line)
+
+            text = re.sub(r"\[.*?\]", "", line).strip()
+            if not text:
+                continue
+
+            # 決定したフォント情報を使って p タグを作る
+            used_font = font_match.group(1).strip() if font_match else (firebase_settings.get("fontSelect") if firebase_settings else "IPAexGothic")
+            used_size = size_match.group(1).strip() if size_match else (str(firebase_settings.get("fontSize")) if firebase_settings else "16")
+            used_weight = weight_match.group(1).strip() if weight_match else "normal"
+
+            # line-height の反映（もし current_lineheight があれば）
+            lh_css = "line-height:1.6;"
+            if current_lineheight:
+                # neo の行間が px ベースだったら相当に大きくなるので簡易変換
+                try:
+                    # 小〜中程度の値に落とす（必要に応じて調整）
+                    lh_val = max(1.0, float(current_lineheight) / 20.0)
+                    lh_css = f"line-height:{lh_val};"
+                except:
                     pass
 
-            # 行間：加算適用
-            if firebase_settings.get("lineHeight"):
-                try:
-                    line_height_add = float(firebase_settings["lineHeight"])
-                    line_height = str(base_line_height + line_height_add)
-                except Exception:
-                    pass
+            # escape
+            esc_text = pyhtml.escape(text)
+            html_blocks.append(
+                f"<p style=\"font-family:'{used_font}'; font-size:{used_size}px; font-weight:{used_weight}; {lh_css} margin:0.3em 0;\">{esc_text}</p>"
+            )
 
-        print("app_root is:", app_root)
-        # IPAexGothic フォント設定
-        font_file_path = os.path.join(app_root, "fonts", "ipaexg.ttf")
-        # あれほど言うたのにfontsファイルに入れなかった人用
-        if not os.path.exists(font_file_path):
-            font_file_path = os.path.join(app_root, "ipaexg.ttf")
+        body_html = "\n".join(html_blocks)
 
-        if not os.path.exists(font_file_path):
-            return (False, "フォントファイル 'ipaexg.ttf' が見つかりません。")
-
-        font_url = path2url(font_file_path)
-
-        css = f"""
-        @font-face {{
-            font-family: 'IPAexGothic';
-            src: url('{path2url(os.path.join(app_root, "fonts", "ipaexg.ttf"))}');
-        }}
-        @font-face {{
-            font-family: 'IPAexMincho';
-            src: url('{path2url(os.path.join(app_root, "fonts", "ipaexm.ttf"))}');
-        }}
-        @font-face {{
-            font-family: 'Noto Sans JP';
-            src: url('{path2url(os.path.join(app_root, "fonts", "NotoSansJP-Regular.ttf"))}');
-        }}
-        @font-face {{
-            font-family: 'Noto Serif JP';
-            src: url('{path2url(os.path.join(app_root, "fonts", "NotoSerifJP-Regular.ttf"))}');
-        }}
-        @font-face {{
-            font-family: 'Kosugi Maru';
-            src: url('{path2url(os.path.join(app_root, "fonts", "KosugiMaru-Regular.ttf"))}');
-        }}
-
-        body {{
-            font-family: '{font_family}', 'IPAexGothic', sans-serif;
-            font-size: {font_size};
-            line-height: {line_height};
-        }}
+        # --- 4) 最終 HTML テンプレート（フォント定義を head に埋め込む） ---
+        css_font_defs = "\n".join(font_face_rules)
+        html_template = f"""
+        <html lang="ja">
+        <head>
+            <meta charset="utf-8">
+            <style>
+                {css_font_defs}
+                body {{
+                    padding: 1cm;
+                    word-wrap: break-word;
+                    background: white;
+                }}
+                img {{ page-break-inside: avoid; max-width:100%; }}
+            </style>
+        </head>
+        <body>
+            {body_html}
+        </body>
+        </html>
         """
 
-        HTML(string=f"<style>{css}</style>{html_body}", base_url=app_root).write_pdf(output_pdf_path)
-        return (True, None)
+        # --- 5) WeasyPrint に書かせる ---
+        # base_url は app_root にしておく（ファイル参照の解決に使われる）
+        HTML(string=html_template, base_url=app_root).write_pdf(output_path)
+
+        print(f"✅ PDF生成成功: {output_path}")
+        return True, None
 
     except Exception as e:
-        return (False, f"WeasyPrintエラー: {e}")
+        print("❌ PDF生成失敗:", e)
+        return False, str(e)
 
 
 def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
@@ -664,8 +731,10 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
     os.makedirs(dir_name, exist_ok=True)
 
     # --- Firebase設定を取得 ---
-    fs_font_override = firebase_settings.get("fontSelect") if firebase_settings else None
-    fs_size_add = float(firebase_settings.get("fontSize", 0)) if firebase_settings else 0.0
+    fs_font_override = firebase_settings.get(
+        "fontSelect") if firebase_settings else None
+    fs_size_add = float(firebase_settings.get("fontSize",
+                                              0)) if firebase_settings else 0.0
 
     # 出力ファイルパス
     output_file_OG = os.path.join(dir_name, f"{basename}_OG.txt")
@@ -682,9 +751,14 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
         # テキスト抽出
         for blk in page.get_text("dict")["blocks"]:
             if blk["type"] == 0:
-                text = "".join(span["text"] for ln in blk["lines"] for span in ln["spans"]).strip()
+                text = "".join(span["text"] for ln in blk["lines"]
+                               for span in ln["spans"]).strip()
                 if text:
-                    elements.append({"type": "text", "bbox": blk["bbox"], "content": text})
+                    elements.append({
+                        "type": "text",
+                        "bbox": blk["bbox"],
+                        "content": text
+                    })
 
         # 画像抽出
         for j, img in enumerate(page.get_images(full=True)):
@@ -699,7 +773,11 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
                 rel = os.path.join(basename, name).replace("\\", "/")
                 imgs.append(rel)
                 bbox = page.get_image_info(xref)[0]["bbox"]
-                elements.append({"type": "image", "bbox": bbox, "content": full})
+                elements.append({
+                    "type": "image",
+                    "bbox": bbox,
+                    "content": full
+                })
             except Exception as e:
                 print("画像抽出失敗:", e)
 
@@ -716,7 +794,8 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
                 if gap > 0:
                     line_gap = gap
                     # Firestoreの倍率反映（NEO用）
-                    if firebase_settings and firebase_settings.get("lineHeight"):
+                    if firebase_settings and firebase_settings.get(
+                            "lineHeight"):
                         try:
                             multiplier = float(firebase_settings["lineHeight"])
                             line_gap = gap * multiplier
@@ -737,7 +816,8 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
                         if blk["type"] == 0:
                             for line in blk["lines"]:
                                 for span in line["spans"]:
-                                    if span["text"].strip() and span["text"].strip() in text:
+                                    if span["text"].strip(
+                                    ) and span["text"].strip() in text:
                                         found_span = span
                                         break
                                 if found_span:
@@ -760,8 +840,11 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
                 size = og_size + fs_size_add  # 元サイズに加算
 
                 # --- 出力
-                neo.append(f"[フォント:{font}][サイズ:{size:.2f}][ウェイト:normal]{text}\n")
-                og_tagged.append(f"[フォント:{og_font}][サイズ:{og_size:.2f}][ウェイト:{og_weight}]{text}\n")
+                neo.append(
+                    f"[フォント:{font}][サイズ:{size:.2f}][ウェイト:normal]{text}\n")
+                og_tagged.append(
+                    f"[フォント:{og_font}][サイズ:{og_size:.2f}][ウェイト:{og_weight}]{text}\n"
+                )
                 sorted_txt.append(f"テキスト: {text}\n")
 
                 prev_y = el["bbox"][3]
@@ -791,29 +874,53 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
     # --- PDF再構築 ---
     recreated_pdf_filename = f"{basename}_recreated.pdf"
     recreated_pdf_path = os.path.join(dir_name, recreated_pdf_filename)
-    pdf_ok, _ = create_pdf_with_weasyprint(
+    pdf_ok, pdf_error = create_pdf_with_weasyprint(
         neo_content,
         recreated_pdf_path,
         app_root,
         firebase_settings=firebase_settings
     )
-    recreated_pdf_url = os.path.join(basename, recreated_pdf_filename).replace("\\", "/") if pdf_ok else ""
+    recreated_pdf_url = os.path.join(basename, recreated_pdf_filename).replace(
+        "\\", "/") if pdf_ok else ""
     if not pdf_ok:
+        print("❌ PDF再構成に失敗:", pdf_error)
+        recreated_pdf_url = ""
         download_html = "<p style='color:red;'>PDFの再構成に失敗しました。</p>"
+    else:
+        print("✅ PDF再構成成功:", recreated_pdf_path)
+        recreated_pdf_url = os.path.join(basename, recreated_pdf_filename).replace("\\", "/")
+        download_html = (
+            f'<div class="download-section"><h3>再構成されたPDF</h3>'
+            f'<a href="/outputs/{html.escape(recreated_pdf_url)}" '
+            f'class="action-link" download>ダウンロード</a></div>'
+        )
+
+    # --- NEOテキスト生成（追加） ---
+    extracted_text = "".join(neo)
+    neo_text = extracted_text
+
+    font_size = firebase_settings.get("fontSize", 16) if firebase_settings else 16
+    line_height = firebase_settings.get("lineHeight", 1.6) if firebase_settings else 1.6
+    font_select = firebase_settings.get("fontSelect", "IPAexGothic") if firebase_settings else "IPAexGothic"
 
     # --- HTML生成 ---
-    styled_neo_html = create_styled_html(neo_content, app_root, firebase_settings)
+    styled_neo_html = convert_neo_to_html(
+        neo_text,
+        font_size,
+        line_height,
+        font_select,
+        app_root
+    )
+    
     image_gallery_html = "".join(
         f'<a href="/outputs/{html.escape(url)}" target="_blank">'
         f'<img src="/outputs/{html.escape(url)}" alt="image"></a>'
-        for url in imgs
-    ) or "<p>画像は抽出されませんでした。</p>"
+        for url in imgs) or "<p>画像は抽出されませんでした。</p>"
 
     download_html = (
         f'<div class="download-section"><h3>再構成されたPDF</h3>'
         f'<a href="/outputs/{html.escape(recreated_pdf_url)}" class="action-link" download>ダウンロード</a></div>'
-        if pdf_ok else ""
-    )
+        if pdf_ok else "")
 
     # --- 統合HTML ---
     result_html = f"""
