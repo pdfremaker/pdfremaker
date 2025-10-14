@@ -1,33 +1,44 @@
 /* ============================
-   page_result.css
-   処理結果ページ専用スタイル
+   page_result.css（固定スタイル適用版）
+   処理結果ページ専用スタイル（読字障がい支援向け）
    ============================ */
 
-/* 🧱 ベースレイアウト */
+/* 固定スタイル設定（生徒設定に左右されない） */
+body, h2, p, summary, details, div, pre, code {
+  font-family: 'Helvetica Neue', Arial, sans-serif !important;
+  line-height: 1.6 !important;
+  color: #333 !important;
+  letter-spacing: 0.03em !important;
+}
+
+/* 🧱 ベースレイアウト（固定フォント＆読みやすさ重視） */
 body {
-  font-family: 'Helvetica Neue', Arial, sans-serif;
-  line-height: 1.6;
+  font-family: 'Kosugi Maru', 'Noto Sans JP', sans-serif !important;
+  line-height: 1.8 !important;
+  letter-spacing: 0.08em !important;
   margin: 0;
-  background-color: #f4f4f9;
-  color: #333;
+  background-color: #f5f7fb;
+  color: #222;
+  padding: 2em 0;
 }
 
 .container {
   max-width: 960px;
   margin: 2em auto;
   padding: 2em;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
 }
 
 /* 🏷 見出し */
 h2 {
-  border-bottom: 2px solid #007bff;
+  border-bottom: 2px solid #2563eb;
   padding-bottom: 10px;
-  color: #333;
-  font-size: 1.6rem;
-  margin-bottom: 1rem;
+  color: #1e3a8a;
+  font-size: 1.7rem;
+  margin-bottom: 1.2rem;
+  letter-spacing: 0.05em;
 }
 
 .pdf-preview iframe {
@@ -179,4 +190,26 @@ summary {
   summary {
     font-size: 1rem;
   }
+}
+
+/* DEBUGトグル */
+.debug-toggle {
+  float: right;
+  font-size: 0.9em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.debug-toggle input {
+  margin-right: 0.3em;
+  transform: scale(1.2);
+}
+
+/* トグルOFF時に非表示にする領域 */
+#debug-section {
+  display: none;
+}
+
+#debug-section.show {
+  display: block;
 }

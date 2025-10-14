@@ -6,3 +6,4 @@ weasyprint
 reportlab
 gunicorn
 fitz
+beautifulsoup4

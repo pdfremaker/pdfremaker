@@ -3,7 +3,7 @@ replitで変更したデータをGitHubに反映させるときは次のコー�
 
 git add .
 git commit -m "update: "
-git push
+git pushgptgp
 
 ↑git commit -m "update"の中に更新内容を書く 別にupdateのままでもおけ丸水産
 """
@@ -19,8 +19,11 @@ import tempfile
 import html
 import html as pyhtml
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import shutil
+from bs4 import BeautifulSoup
+import time
+import mimetypes
 
 # PDF操作関連
 import pymupdf as fitz
@@ -43,51 +46,69 @@ from logging.handlers import RotatingFileHandler
 # ログ設定
 def setup_logging():
     """
-    ログを日付ごとに分離し、app.log と error.log に出力。
-    古いログは cleanup_old_logs() によって自動削除される。
+    ログ設定（日本標準時対応・Flask互換）
+    - JSTで日付フォルダを自動作成（例: logs/2025-10-14）
+    - app.log（INFO以上） / error.log（WARNING以上）を自動分離
+    - 2MB×5世代ローテーション
+    - Flaskや他ライブラリの初期化済logging設定を上書き
     """
-    # === 📁 日付フォルダ作成 ===
-    today = datetime.now().strftime("%Y-%m-%d")
-    log_dir = os.path.join("logs", today)
+
+    # 日本標準時（JST）
+    JST = timezone(timedelta(hours=9), name="Asia/Tokyo")
+    logging.Formatter.converter = lambda *args: datetime.now(JST).timetuple()
+
+    # 日付フォルダ
+    today_str = datetime.now(JST).strftime("%Y-%m-%d")
+    log_dir = os.path.join("logs", today_str)
     os.makedirs(log_dir, exist_ok=True)
 
-    # === ⚙️ 設定 ===
-    max_bytes = 2_000_000   # 2MB
-    backup_count = 5        # ローテーション数
+    # 設定
+    max_bytes = 2_000_000  # 2MB
+    backup_count = 5
     log_format = "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
     formatter = logging.Formatter(log_format)
 
-    # === 🟢 通常ログ (INFO以上) ===
-    app_log_path = os.path.join(log_dir, "app.log")
+    # INFO以上: app.log
     app_handler = RotatingFileHandler(
-        app_log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+        os.path.join(log_dir, "app.log"),
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8"
     )
     app_handler.setLevel(logging.INFO)
     app_handler.setFormatter(formatter)
 
-    # === 🔴 エラーログ (WARNING以上) ===
-    error_log_path = os.path.join(log_dir, "error.log")
+    # WARNING以上: error.log
     error_handler = RotatingFileHandler(
-        error_log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+        os.path.join(log_dir, "error.log"),
+        maxBytes=max_bytes,
+        backupCount=backup_count,
+        encoding="utf-8"
     )
     error_handler.setLevel(logging.WARNING)
     error_handler.setFormatter(formatter)
 
-    # === 🖥️ コンソール出力 ===
+    # コンソール出力
     console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
     console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
 
-    # === 🧩 基本設定 ===
-    logging.basicConfig(
-        level=logging.INFO,
-        handlers=[app_handler, error_handler, console_handler]
-    )
+    # 既存ハンドラを削除して再構成
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
 
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(app_handler)
+    root_logger.addHandler(error_handler)
+    root_logger.addHandler(console_handler)
+
+    # 動作確認用ログ
     logger = logging.getLogger("pdf_remaker")
-    logger.info(f"🪵 Logging initialized for {today}")
-    logger.info(f"📁 Log directory: {log_dir}")
-    logger.info(f"🧩 app.log / error.log separated")
+    logger.info("✅ ログ初期化完了")
+    logger.info(f"✅ 日付（JST）: {today_str}")
+    logger.info(f"✅ ログディレクトリ: {log_dir}")
+    logger.info("✅ app.log / error.log 分離・ローテーション有効")
 
     return logger
 
@@ -123,10 +144,10 @@ def cleanup_old_logs(base_dir: str, days_to_keep: int, logger_obj):
                 logger_obj.exception("cleanup_old_logs: failed to remove %s: %s", folder_path, e)
 
 
-# --- ログ初期化 ---
+# ログ初期化
 logger = setup_logging()
 
-# --- 古いログを自動削除 ---
+# 古いログを自動削除
 days_to_keep = int(os.environ.get("LOG_DAYS_TO_KEEP", "7"))  # 7日保持
 cleanup_old_logs("logs", days_to_keep, logger)
 
@@ -319,7 +340,7 @@ def upload_pdf():
 
     logger.info("upload_pdf: POST request received")
 
-    # ✅ ファイル存在チェック
+    # ファイル存在チェック
     if "file" not in request.files or not request.files["file"].filename:
         logger.warning("upload_pdf: no file in request")
         return "ファイルが選択されていません。"
@@ -328,12 +349,12 @@ def upload_pdf():
     filename = uploaded_file.filename or ""
     logger.info(f"upload_pdf: uploaded filename={filename}")
 
-    # ✅ PDF以外は拒否（早期returnでネスト削減）
+    # PDF以外は拒否（早期returnでネスト削減）
     if not filename.lower().endswith(".pdf"):
         logger.warning(f"upload_pdf: uploaded file is not a PDF: {filename}")
         return "PDFファイルをアップロードしてください。"
 
-    # ✅ student_id設定確認
+    # student_id設定確認
     student_id = request.form.get("student_id", "").strip()
     logger.info(f"upload_pdf: student_id={student_id or '<none>'}")
 
@@ -369,19 +390,123 @@ def serve_output_file(filepath):
         full_path = os.path.abspath(full_path)
         output_folder_abs = os.path.abspath(OUTPUT_FOLDER)
 
-        if not full_path.startswith(output_folder_abs + os.path.sep
-                                    ) and full_path != output_folder_abs:
+        # 出力フォルダ外へのアクセスを防ぐ
+        if not (full_path.startswith(output_folder_abs + os.path.sep) or full_path == output_folder_abs):
             return jsonify({"message": "不正なパスです"}), 400
 
         if not os.path.isfile(full_path):
             return jsonify({"message": "ファイルが見つかりません。"}), 404
 
-        logger.info(f"serve_output_file: sending file {full_path}")
-        return send_file(full_path, as_attachment=True)
+        # MIMEタイプを推測して inline で返す（iframe 表示用）
+        mimetype, _ = mimetypes.guess_type(full_path)
+        if mimetype is None:
+            mimetype = "application/octet-stream"
+
+        logger.info(f"serve_output_file: sending file {full_path} with mimetype {mimetype}")
+        return send_file(full_path, mimetype=mimetype, as_attachment=False)
 
     except Exception as e:
         logger.exception("ファイル送信中にエラーが発生しました")
         return jsonify({"message": "内部エラーが発生しました。ログをご確認ください。"}), 500
+
+
+@app.route("/result")
+def result_page():
+    try:
+        # ここで実際のデータを渡してレンダリング
+        pdf_name = request.args.get("pdf_name", "output.pdf")
+        dir_name = request.args.get("dir_name", "output")
+
+        # ダミーデータ（テスト用）
+        styled_neo_html = "<p>スタイル付きNEOテキストの例</p>"
+        neo_content = "<p>NEOタグ付きテキストの例</p>"
+        og_tagged_content = "<p>OGタグ付きテキストの例</p>"
+        sorted_content = "<p>時系列ソートの例</p>"
+        image_gallery_html = "<p>抽出画像の例</p>"
+        imgs = []
+
+        return render_template(
+            "result.html",
+            pdf_name=pdf_name,
+            dir_name=dir_name,
+            styled_neo_html=styled_neo_html,
+            neo_content=neo_content,
+            og_tagged_content=og_tagged_content,
+            sorted_content=sorted_content,
+            image_gallery_html=image_gallery_html,
+            imgs=imgs,
+            download_html="""
+                <a href='/outputs/{0}' target='_blank'>PDFを開く</a>
+            """.format(pdf_name)
+        )
+
+    except Exception as e:
+        logger.exception("result_page: エラーが発生しました")
+        return f"エラーが発生しました: {e}", 500
+
+
+@app.route("/logs")
+def view_logs():
+    try:
+        log_base_dir = "logs"
+        log_dirs = sorted(
+            [d for d in os.listdir(log_base_dir) if os.path.isdir(os.path.join(log_base_dir, d))],
+            reverse=True
+        )
+
+        all_logs = []
+        for d in log_dirs:
+            log_dir = os.path.join(log_base_dir, d)
+            app_log_path = os.path.join(log_dir, "app.log")
+            error_log_path = os.path.join(log_dir, "error.log")
+
+            app_log = ""
+            error_log = ""
+            if os.path.exists(app_log_path):
+                with open(app_log_path, "r", encoding="utf-8", errors="ignore") as f:
+                    app_log = f.read()
+            if os.path.exists(error_log_path):
+                with open(error_log_path, "r", encoding="utf-8", errors="ignore") as f:
+                    error_log = f.read()
+
+            all_logs.append({
+                "date": d,
+                "app_log": app_log,
+                "error_log": error_log,
+            })
+
+        # どのフォルダにもログがない場合
+        if not any(l["app_log"] or l["error_log"] for l in all_logs):
+            message = "現在ログファイルはありません。"
+        else:
+            message = ""
+
+        return render_template(
+            "logs.html",
+            page_name="logs",
+            message=message,
+            all_logs=all_logs
+        )
+
+    except Exception as e:
+        logging.exception("view_logs: ログ閲覧ページ生成中にエラー発生")
+        return f"ログ閲覧ページでエラーが発生しました: {e}", 500
+
+
+# ダウンロード機能（ファイル名指定で送信）
+@app.route("/download/<filename>")
+def download_file(filename):
+    try:
+        file_path = os.path.join(OUTPUT_FOLDER, filename)
+        if not os.path.isfile(file_path):
+            return "指定されたファイルが存在しません。", 404
+
+        logger.info(f"download_file: {filename} を送信します")
+        return send_file(file_path, as_attachment=True)
+
+    except Exception as e:
+        logger.exception("download_file: 送信エラー")
+        return f"ファイル送信中にエラーが発生しました: {e}", 500
 
 
 def convert_neo_to_html(neo_content: str,
@@ -496,7 +621,7 @@ def create_pdf_with_weasyprint(neo_content,
     print(neo_content[:800])
 
     try:
-        # --- 1) 使われているフォント名を収集 ---
+        # 使われているフォント名を収集
         font_names = set(re.findall(r'\[フォント:(.*?)\]', neo_content))
         # デフォルトフォントも入れておく
         if firebase_settings and firebase_settings.get("fontSelect"):
@@ -504,7 +629,7 @@ def create_pdf_with_weasyprint(neo_content,
         if not font_names:
             font_names.add("IPAexGothic")
 
-        # --- 2) 各フォント名をファイルパスに解決して @font-face を作る ---
+        # 各フォント名をファイルパスに解決して @font-face を作る
         font_face_rules = []
         for fname in sorted(font_names):
             # get_font_path は既に定義されている関数を使う
@@ -521,7 +646,7 @@ def create_pdf_with_weasyprint(neo_content,
             else:
                 print(f"⚠️ フォントファイル見つからず: {fname}")
 
-        # --- 3) HTML ブロックを作る ---
+        # HTML ブロックを作る
         html_blocks = []
         current_font = None
         current_size = None
@@ -595,7 +720,7 @@ def create_pdf_with_weasyprint(neo_content,
 
         body_html = "\n".join(html_blocks)
 
-        # --- 4) 最終 HTML テンプレート（フォント定義を head に埋め込む） ---
+        # 最終 HTML テンプレート（フォント定義を head に埋め込む）
         css_font_defs = "\n".join(font_face_rules)
         html_template = f"""
         <html lang="ja">
@@ -617,7 +742,7 @@ def create_pdf_with_weasyprint(neo_content,
         </html>
         """
 
-        # --- 5) WeasyPrint に書かせる ---
+        # WeasyPrint に書かせる
         # base_url は app_root にしておく（ファイル参照の解決に使われる）
         HTML(string=html_template, base_url=app_root).write_pdf(output_path)
 
@@ -630,6 +755,7 @@ def create_pdf_with_weasyprint(neo_content,
 
 
 def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
+    pdf_name = os.path.basename(pdf_path)
     try:
         doc = fitz.open(pdf_path)
         assert isinstance(doc, fitz.Document)
@@ -640,7 +766,7 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
     dir_name = os.path.join(OUTPUT_FOLDER, basename)
     os.makedirs(dir_name, exist_ok=True)
 
-    # --- Firebase設定を取得 ---
+    # Firebase設定を取得
     fs_font_override = firebase_settings.get(
         "fontSelect") if firebase_settings else None
     fs_size_add = float(firebase_settings.get("fontSize",
@@ -653,7 +779,7 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
 
     neo, sorted_txt, imgs, og_tagged = [], [], [], []
 
-    # --- ページごとの抽出 ---
+    # ページごとの抽出
     for i, page in enumerate(doc):
         sorted_txt.append(f"\n--- Page {i+1} ---\n")
         elements = []
@@ -698,7 +824,7 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
         for el in elements:
             y = el["bbox"][1]
 
-            # --- 🔹 行間処理 ---
+            # 行間処理
             if prev_y is not None:
                 gap = y - prev_y
                 if gap > 0:
@@ -715,11 +841,11 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
                     neo.append(f"[行間]{line_gap:.2f}\n")  # 生徒設定適用後
                     og_tagged.append(f"[行間]{gap:.2f}\n")  # 元PDF値
 
-            # --- テキスト要素 ---
+            # テキスト要素
             if el["type"] == "text":
                 text = el["content"]
 
-                # --- 元PDFフォント情報を取得 (OG用)
+                # 元PDFフォント情報を取得 (OG用)
                 try:
                     found_span = None
                     for blk in page.get_text("dict")["blocks"]:
@@ -745,11 +871,11 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
                 except Exception:
                     og_font, og_size, og_weight = "Unknown", 12.0, "normal"
 
-                # --- Firestore設定反映後のフォント (NEO用)
+                # Firestore設定反映後のフォント (NEO用)
                 font = fs_font_override or "IPAexGothic, sans-serif"
                 size = og_size + fs_size_add  # 元サイズに加算
 
-                # --- 出力
+                # 出力
                 neo.append(
                     f"[フォント:{font}][サイズ:{size:.2f}][ウェイト:normal]{text}\n")
                 og_tagged.append(
@@ -759,7 +885,7 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
 
                 prev_y = el["bbox"][3]
 
-            # --- 画像要素 ---
+            # 画像要素
             elif el["type"] == "image":
                 bbox = el["bbox"]
                 img_tag = f"[画像:{el['content']}:{bbox[0]:.2f}:{bbox[1]:.2f}:{bbox[2]-bbox[0]:.2f}:{bbox[3]-bbox[1]:.2f}]\n"
@@ -768,12 +894,12 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
                 sorted_txt.append(f"[画像] {el['content']} | BBOX: {bbox}\n\n")
                 prev_y = bbox[3]
 
-    # --- 出力内容を結合 ---
+    # 出力内容を結合
     neo_content = "".join(neo)
     og_tagged_content = "".join(og_tagged)
     sorted_content = "".join(sorted_txt)
 
-    # --- ファイル保存 ---
+    # ファイル保存
     with open(output_file_NEO, "w", encoding="utf-8") as f:
         f.write(neo_content)
     with open(output_file_SORTED, "w", encoding="utf-8") as f:
@@ -781,7 +907,7 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
     with open(output_file_OG, "w", encoding="utf-8") as f:
         f.write(og_tagged_content)
 
-    # --- PDF再構築 ---
+    # PDF再構築
     recreated_pdf_filename = f"{basename}_recreated.pdf"
     recreated_pdf_path = os.path.join(dir_name, recreated_pdf_filename)
     pdf_ok, pdf_error = create_pdf_with_weasyprint(
@@ -805,7 +931,7 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
             f'<a href="/outputs/{html.escape(recreated_pdf_url)}" '
             f'class="action-link" download>ダウンロード</a></div>')
 
-    # --- NEOテキスト生成（追加） ---
+    # NEOテキスト生成（追加）
     extracted_text = "".join(neo)
     neo_text = extracted_text
 
@@ -816,7 +942,7 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
     font_select = firebase_settings.get(
         "fontSelect", "IPAexGothic") if firebase_settings else "IPAexGothic"
 
-    # --- HTML生成 ---
+    # HTML生成
     styled_neo_html = convert_neo_to_html(neo_text, font_size, line_height,
                                           font_select, app_root)
 
@@ -830,18 +956,39 @@ def process_pdf(pdf_path: str, firebase_settings: dict | None = None):
         f'<a href="/outputs/{html.escape(recreated_pdf_url)}" class="action-link" download>ダウンロード</a></div>'
         if pdf_ok else "")
 
-    return render_template("result.html",
-                           pdf_name=os.path.basename(pdf_path),
-                           dir_name=os.path.abspath(dir_name),
-                           download_html=download_html,
-                           styled_neo_html=styled_neo_html,
-                           neo_content=neo_content,
-                           og_tagged_content=og_tagged_content,
-                           sorted_content=sorted_content,
-                           imgs=imgs,
-                           image_gallery_html=image_gallery_html)
+    return render_template(
+        "result.html",
+        pdf_name=pdf_name,
+        dir_name=dir_name,
+        download_html=download_html,
+        recreated_pdf_url=recreated_pdf_url,
+        imgs=imgs,
+        styled_neo_html=sanitize_html_for_result(styled_neo_html),
+        neo_content=sanitize_html_for_result(neo_content),
+        og_tagged_content=sanitize_html_for_result(og_tagged_content),
+        sorted_content=sanitize_html_for_result(sorted_content),
+        image_gallery_html=image_gallery_html
+    )
+
+
+def sanitize_html_for_result(html):
+    """結果ページ用のHTMLをクリーン化（生徒設定フォントなどを除去）"""
+    if not html:
+        return ""
+
+    # <style>タグを全削除
+    html = re.sub(r"<style.*?>.*?</style>", "", html, flags=re.DOTALL)
+
+    # インラインstyle属性を削除（font-family, line-heightなど）
+    html = re.sub(r'style="[^"]*"', "", html)
+
+    # spanなどの余分なタグを整理
+    html = re.sub(r'\s+', ' ', html)
+
+    return html.strip()
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
+    print("DEBUG: Logging handlers:", logging.getLogger().handlers)
     app.run(debug=False, host="0.0.0.0", port=port)

@@ -1,0 +1,75 @@
+/* ============================
+   🪵 page_logs.css
+   ============================ */
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  background: white;
+  padding: 2em;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+h2 {
+  color: #333;
+  margin-bottom: 1em;
+}
+
+.log-list {
+  list-style: none;
+  padding: 0;
+}
+
+.log-list li {
+  margin-bottom: 0.5em;
+}
+
+.log-link {
+  text-decoration: none;
+  color: #007bff;
+  font-weight: 500;
+}
+
+.log-link:hover {
+  text-decoration: underline;
+}
+
+/* コメントアウト外したら、ログがもんげぇサイバーな感じになるズラよ
+pre {
+  background: #111;
+  color: #0f0;
+  padding: 1em;
+  border-radius: 8px;
+  font-family: 'Consolas', monospace;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+*/
+
+details summary {
+  cursor: pointer;
+  font-weight: bold;
+  margin: 0.5em 0;
+}
+
+/* === ログ日付バッジ === */
+.log-date {
+  background: var(--main-color);
+  color: white;
+  padding: 0.3em 0.7em;
+  border-radius: 6px;
+  font-weight: bold;
+  font-size: 1.1em;
+}
+
+/* details summary の見た目調整 */
+details summary {
+  cursor: pointer;
+  margin: 0.5em 0;
+  list-style: none;
+}
+
+/* 折りたたみ全体の余白 */
+details {
+  margin-bottom: 1.5em;
+}

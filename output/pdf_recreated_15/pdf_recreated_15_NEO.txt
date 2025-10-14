@@ -1,0 +1,23 @@
+[フォント:Noto Serif JP][サイズ:61.00][ウェイト:normal]フォントサイズ８
+[行間]13.25
+[フォント:Noto Serif JP][サイズ:75.25][ウェイト:normal]あああああああああああああ
+[行間]7.44
+[画像:/home/runner/workspace/output/pdf_recreated_15/image_p1_0.png:234.26:422.40:126.75:126.75]
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]いいいいいい
+[行間]199.48
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]いいいいいい
+[行間]199.48
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]いいいいいい
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]いいいいいい
+[行間]199.48
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]い
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]いいい いいい
+[行間]199.48
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]いいい、。・
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]￥￥：」＠
+[行間]199.48
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]「ー＾,.¥/
+[行間]129.39
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]・saaaしｆｋｊｌ；
+[行間]9.04
+[フォント:Noto Serif JP][サイズ:71.33][ウェイト:normal]ああ

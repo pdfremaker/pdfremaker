@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/page_logs.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="log-container">
+  <h2>🪵 ログファイル一覧</h2>
+  {% if message %}
+    <p>{{ message }}</p>
+  {% else %}
+    {% for item in all_logs %}
+      <details>
+        <summary>
+          <span class="log-date">{{ item.date }}</span>
+        </summary>
+        <h3>app.log</h3>
+        <pre>{{ item.app_log or "（空）" }}</pre>
+        <h3>error.log</h3>
+        <pre>{{ item.error_log or "（空）" }}</pre>
+      </details>
+    {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}
