@@ -30,6 +30,12 @@ h2 {
   margin-bottom: 1rem;
 }
 
+.pdf-preview iframe {
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+}
+
 /* 📄 コンテンツボックス */
 .content-box, .styled-content-box {
   border: 1px solid #ddd;

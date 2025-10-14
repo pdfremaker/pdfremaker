@@ -40,90 +40,94 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 
-# 古いログ削除
-def cleanup_old_logs(base_dir: str, days_to_keep: int, logger_obj):
-    """
-    base_dir 内の YYYY-MM-DD 形式フォルダをチェックし、
-    days_to_keep 日より古ければ削除する。
-    """
-    if not os.path.isdir(base_dir):
-        logger_obj.info("cleanup_old_logs: no logs dir yet (%s)", base_dir)
-        return
-
-    now = datetime.now()
-    cutoff = now - timedelta(days=days_to_keep)
-    for name in os.listdir(base_dir):
-        path = os.path.join(base_dir, name)
-        if not os.path.isdir(path):
-            continue
-        try:
-            folder_date = datetime.strptime(name, "%Y-%m-%d")
-        except ValueError:
-            continue
-        if folder_date < cutoff:
-            try:
-                shutil.rmtree(path)
-                logger_obj.info("cleanup_old_logs: removed old log folder %s",
-                                path)
-            except Exception as e:
-                logger_obj.exception(
-                    "cleanup_old_logs: failed to remove %s: %s", path, e)
-
-
-# ログ設定関数
+# ログ設定
 def setup_logging():
-    log_dir = "logs"
+    """
+    ログを日付ごとに分離し、app.log と error.log に出力。
+    古いログは cleanup_old_logs() によって自動削除される。
+    """
+    # === 📁 日付フォルダ作成 ===
+    today = datetime.now().strftime("%Y-%m-%d")
+    log_dir = os.path.join("logs", today)
     os.makedirs(log_dir, exist_ok=True)
 
-    max_bytes = int(os.environ.get("LOG_MAX_BYTES", "2000000"))  # 2MBまで
-    backup_count = int(os.environ.get("LOG_BACKUP_COUNT", "5"))  # ローテーション5世代保持
-
-    # --- 共通フォーマット ---
+    # === ⚙️ 設定 ===
+    max_bytes = 2_000_000   # 2MB
+    backup_count = 5        # ローテーション数
     log_format = "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
     formatter = logging.Formatter(log_format)
 
-    # --- 通常ログ (INFO以上) ---
+    # === 🟢 通常ログ (INFO以上) ===
     app_log_path = os.path.join(log_dir, "app.log")
-    app_handler = RotatingFileHandler(app_log_path,
-                                      maxBytes=max_bytes,
-                                      backupCount=backup_count,
-                                      encoding="utf-8")
+    app_handler = RotatingFileHandler(
+        app_log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+    )
     app_handler.setLevel(logging.INFO)
     app_handler.setFormatter(formatter)
 
-    # --- エラーログ (WARNING以上を記録) ---
+    # === 🔴 エラーログ (WARNING以上) ===
     error_log_path = os.path.join(log_dir, "error.log")
-    error_handler = RotatingFileHandler(error_log_path,
-                                        maxBytes=max_bytes,
-                                        backupCount=backup_count,
-                                        encoding="utf-8")
+    error_handler = RotatingFileHandler(
+        error_log_path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+    )
     error_handler.setLevel(logging.WARNING)
     error_handler.setFormatter(formatter)
 
-    # --- コンソール出力も維持 ---
+    # === 🖥️ コンソール出力 ===
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     console_handler.setLevel(logging.INFO)
 
-    # --- 基本設定 ---
-    logging.basicConfig(level=logging.INFO,
-                        handlers=[app_handler, error_handler, console_handler])
+    # === 🧩 基本設定 ===
+    logging.basicConfig(
+        level=logging.INFO,
+        handlers=[app_handler, error_handler, console_handler]
+    )
 
     logger = logging.getLogger("pdf_remaker")
-    logger.info(f"🪵 Logging initialized (max={max_bytes} bytes, backups={backup_count})")
-    logger.info(f"📁 Log files: {app_log_path}, {error_log_path}")
+    logger.info(f"🪵 Logging initialized for {today}")
+    logger.info(f"📁 Log directory: {log_dir}")
+    logger.info(f"🧩 app.log / error.log separated")
 
     return logger
 
 
-# ログ初期化・古いログ掃除
+def cleanup_old_logs(base_dir: str, days_to_keep: int, logger_obj):
+    """
+    base_dir 内の YYYY-MM-DD フォルダをチェックし、
+    days_to_keep 日より古いフォルダを削除。
+    """
+    if not os.path.isdir(base_dir):
+        logger_obj.info("cleanup_old_logs: no logs directory found (%s)", base_dir)
+        return
+
+    now = datetime.now()
+    cutoff = now - timedelta(days=days_to_keep)
+
+    for folder_name in os.listdir(base_dir):
+        folder_path = os.path.join(base_dir, folder_name)
+        if not os.path.isdir(folder_path):
+            continue
+
+        try:
+            folder_date = datetime.strptime(folder_name, "%Y-%m-%d")
+        except ValueError:
+            # 日付形式でないフォルダは無視
+            continue
+
+        if folder_date < cutoff:
+            try:
+                shutil.rmtree(folder_path)
+                logger_obj.info("🧹 cleanup_old_logs: removed old log folder %s", folder_path)
+            except Exception as e:
+                logger_obj.exception("cleanup_old_logs: failed to remove %s: %s", folder_path, e)
+
+
+# --- ログ初期化 ---
 logger = setup_logging()
 
-try:
-    days_to_keep = int(os.environ.get("LOG_DAYS_TO_KEEP", "7"))
-except ValueError:
-    days_to_keep = 7
-
+# --- 古いログを自動削除 ---
+days_to_keep = int(os.environ.get("LOG_DAYS_TO_KEEP", "7"))  # 7日保持
 cleanup_old_logs("logs", days_to_keep, logger)
 
 # Flask・環境設定
@@ -184,9 +188,9 @@ try:
         logger.info("✅ Firebase初期化: 環境変数から読み込み成功")
     else:
         # ローカル環境
-        cred = credentials.Certificate("serviceAccountKey.json")
+        cred = credentials.Certificate("serAccoCaMnNeMg.json")
         firebase_admin.initialize_app(cred)
-        logger.info("✅ Firebase初期化: serviceAccountKey.jsonから読み込み成功")
+        logger.info("✅ Firebase初期化: serAccoCaMnNeMg.jsonから読み込み成功")
 
     db = firestore.client()
     config_ref = db.collection("messages")
@@ -309,51 +313,51 @@ def get_message_api():
 
 @app.route("/", methods=["GET", "POST"])
 def upload_pdf():
-    if request.method == "POST":
-        logger.info("upload_pdf: POST request received")
-        if "file" not in request.files or not request.files["file"].filename:
-            logger.warning("upload_pdf: no file in request")
-            return "ファイルが選択されていません。"
+    if request.method != "POST":
+        logger.debug("upload_pdf: GET request — rendering upload page")
+        return render_template("upload.html", page_name="upload")
 
-        uploaded_file = request.files["file"]
-        filename = uploaded_file.filename or ""
-        logger.info("upload_pdf: uploaded filename=%s", filename)
+    logger.info("upload_pdf: POST request received")
 
-        student_id = request.form.get("student_id", "").strip()
-        logger.info("upload_pdf: student_id=%s", student_id or "<none>")
-        firebase_settings = None
+    # ✅ ファイル存在チェック
+    if "file" not in request.files or not request.files["file"].filename:
+        logger.warning("upload_pdf: no file in request")
+        return "ファイルが選択されていません。"
 
-        if student_id:
-            firebase_settings = get_document("messages", student_id)
-            if firebase_settings:
-                logger.info("upload_pdf: applying firebase settings for id=%s",
-                            student_id)
-            else:
-                logger.info(
-                    "upload_pdf: no firebase settings found for id=%s; using defaults",
-                    student_id)
+    uploaded_file = request.files["file"]
+    filename = uploaded_file.filename or ""
+    logger.info(f"upload_pdf: uploaded filename={filename}")
 
-        if filename.lower().endswith(".pdf"):
-            try:
-                filename = secure_filename(filename)
-                filepath = os.path.join(UPLOAD_FOLDER, filename)
-                uploaded_file.save(filepath)
-                logger.info("upload_pdf: saved file to %s", filepath)
-                result_html = process_pdf(filepath, firebase_settings)
-                logger.info("upload_pdf: process_pdf completed for %s",
-                            filepath)
-                return result_html
-            except Exception as e:
-                logger.exception(
-                    "upload_pdf: error processing uploaded file %s", filename)
-                return f"処理中にエラーが発生しました: {e}", 500
+    # ✅ PDF以外は拒否（早期returnでネスト削減）
+    if not filename.lower().endswith(".pdf"):
+        logger.warning(f"upload_pdf: uploaded file is not a PDF: {filename}")
+        return "PDFファイルをアップロードしてください。"
+
+    # ✅ student_id設定確認
+    student_id = request.form.get("student_id", "").strip()
+    logger.info(f"upload_pdf: student_id={student_id or '<none>'}")
+
+    firebase_settings = None
+    if student_id:
+        firebase_settings = get_document("messages", student_id)
+        if firebase_settings:
+            logger.info(f"upload_pdf: applying firebase settings for id={student_id}")
         else:
-            logger.warning("upload_pdf: uploaded file is not a PDF: %s",
-                           filename)
-            return "PDFファイルをアップロードしてください。"
+            logger.info(f"upload_pdf: no firebase settings found for id={student_id}; using defaults")
 
-    logger.debug("upload_pdf: GET request — rendering upload page")
-    return render_template("upload.html", page_name="upload")
+    try:
+        filename = secure_filename(filename)
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        uploaded_file.save(filepath)
+        logger.info(f"upload_pdf: saved file to {filepath}")
+
+        result_html = process_pdf(filepath, firebase_settings)
+        logger.info(f"upload_pdf: process_pdf completed for {filepath}")
+        return result_html
+
+    except Exception as e:
+        logger.exception(f"upload_pdf: error processing uploaded file {filename}")
+        return f"処理中にエラーが発生しました: {e}", 500
 
 
 @app.route('/outputs/<path:filepath>')
@@ -413,7 +417,7 @@ def convert_neo_to_html(neo_content: str,
             if size_match:
                 try:
                     current_size = float(size_match.group(1).strip())
-                except:
+                except Exception:
                     pass
             if weight_match:
                 current_weight = weight_match.group(1).strip()
@@ -427,7 +431,7 @@ def convert_neo_to_html(neo_content: str,
         elif line.startswith("[行間]"):
             try:
                 current_line_height = float(line.replace("[行間]", "").strip())
-            except:
+            except Exception:
                 pass
 
         # 画像挿入
@@ -535,7 +539,7 @@ def create_pdf_with_weasyprint(neo_content,
                 try:
                     current_lineheight = float(
                         line.replace("[行間]", "").strip())
-                except:
+                except Exception:
                     current_lineheight = None
                 continue
 
@@ -580,7 +584,7 @@ def create_pdf_with_weasyprint(neo_content,
                     # 小〜中程度の値に落とす（必要に応じて調整）
                     lh_val = max(1.0, float(current_lineheight) / 20.0)
                     lh_css = f"line-height:{lh_val};"
-                except:
+                except Exception:
                     pass
 
             # escape

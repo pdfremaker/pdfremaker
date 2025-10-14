@@ -18,6 +18,11 @@
 
     {{ download_html | safe }}
 
+    <section class="pdf-preview">
+      <h2>📄 出力PDFプレビュー</h2>
+      <iframe src="{{ url_for('serve_output_file', filepath=pdf_name) }}" width="100%" height="700px"></iframe>
+    </section>
+
     <details>
       <summary>スタイル付き NEOテキスト</summary>
       <div class="styled-content-box">{{ styled_neo_html | safe }}</div>
