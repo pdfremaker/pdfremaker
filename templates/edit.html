@@ -31,8 +31,8 @@
     <section>
       <h2>フォントを選択</h2>
       <select id="fontSelect">
-        <option value="Noto Sans JP">ゴシック</option>
-        <option value="Noto Serif JP">明朝</option>
+        <option value="Noto Sans JP">ゴシック（Noto Sans JP）</option>
+        <option value="Noto Serif JP">明朝（Noto Serif JP）</option>
         <option value="Kosugi Maru">丸ゴシック</option>
         <option value="IPAexゴシック">IPAexゴシック</option>
         <option value="IPAex明朝">IPAex明朝</option>
@@ -78,9 +78,12 @@
     const sliderValue = Number(lineSlider.value);
     const lineHeight = baseLine + sliderValue * maxDiff;
     lineValue.textContent = sliderValue.toFixed(1);
+
+    const fontSize = Number(fontSizeSlider.value) + 16;  // デフォルトの基準値を設定
     sizeValue.textContent = fontSizeSlider.value;
+
     text.style.lineHeight = lineHeight + "px";
-    text.style.fontSize = fontSizeSlider.value + "px";
+    text.style.fontSize = fontSize + "px";
     text.style.fontFamily = fontSelect.value;
   }
 

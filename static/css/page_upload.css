@@ -10,10 +10,11 @@ h1 {
 }
 
 h2 {
-  font-size: 1.3rem;
-  border-bottom: 2px solid #007bff;
-  display: inline-block;
-  padding-bottom: 4px;
+  color: #333;
+  font-size: 1.3em;
+  border-left: 4px solid #007bff;
+  padding-left: 0.5em;
+  margin-bottom: 0.6em;
 }
 
 #student-info h3 {
@@ -26,9 +27,12 @@ h2 {
 }
 
 input[type="file"] {
-  border: 1px dashed #999;
-  padding: 12px;
-  background-color: #fafafa;
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  margin-bottom: 1em;
+  font-size: 1em;
 }
 
 input[type="file"]:hover {
@@ -43,4 +47,35 @@ input[type="file"]:hover {
   h1 {
     font-size: 1.4rem;
   }
+}
+
+button {
+  background-color: #007bff;
+  color: white;
+  border: none;             /* 境界線なし */
+  padding: 6px 8px;       /* パディング */
+  border-radius: 5px;  
+  font-weight: bold;
+  font-size:  0.95em;
+}
+
+submit {
+  background-color: #007bff;
+  color: white;
+  border: none;             /* 境界線なし */
+  padding: 6px 8px;       /* パディング */
+  border-radius: 5px;  
+  font-weight: bold;
+  font-size:  0.95em;
+}
+
+
+
+input[type="text"] {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  margin-bottom: 1em;
+  font-size: 1em;
 }

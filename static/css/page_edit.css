@@ -74,6 +74,7 @@ button:hover {
   line-height: 1.5;
   text-align: center;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: font-family 0.3s ease, color 0.3s ease;
 }
 
 .message-box {

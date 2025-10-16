@@ -160,15 +160,15 @@ app_root = os.path.dirname(os.path.abspath(__file__))
 
 # フォント設定
 FONT_FILE_MAP = {
-    "Noto Serif JP": "fonts/NotoSerifJP-Regular.ttf",
-    "明朝体, serif": "fonts/NotoSerifJP-Regular.ttf",
-    "IPAex明朝": "fonts/ipaexg.ttf",
-    "Noto Sans JP": "fonts/NotoSansJP-Regular.ttf",
-    "ゴシック体, sans-serif": "fonts/NotoSansJP-Regular.ttf",
-    "IPAexゴシック": "fonts/ipaexg.ttf",
-    "Kosugi Maru": "fonts/KosugiMaru-Regular.ttf",
-    "Verdana, sans-serif": "fonts/NotoSansJP-Regular.ttf",
-    "Arial, sans-serif": "fonts/NotoSansJP-Regular.ttf"
+    "Noto Serif JP": "static/fonts/NotoSerifJP-Regular.ttf",
+    "明朝体, serif": "static/fonts/NotoSerifJP-Regular.ttf",
+    "IPAex明朝": "static/fonts/ipaexg.ttf",
+    "Noto Sans JP": "static/fonts/NotoSansJP-Regular.ttf",
+    "ゴシック体, sans-serif": "static/fonts/NotoSansJP-Regular.ttf",
+    "IPAexゴシック": "static/fonts/ipaexg.ttf",
+    "Kosugi Maru": "static/fonts/KosugiMaru-Regular.ttf",
+    "Verdana, sans-serif": "static/fonts/NotoSansJP-Regular.ttf",
+    "Arial, sans-serif": "static/fonts/NotoSansJP-Regular.ttf"
 }
 
 
