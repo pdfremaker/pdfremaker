@@ -3,7 +3,7 @@ replitで変更したデータをGitHubに反映させるときは次のコー�
 
 git add .
 git commit -m "update: "
-git pushgptgp
+git push
 
 ↑git commit -m "update"の中に更新内容を書く 別にupdateのままでもおけ丸水産
 """
