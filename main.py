@@ -64,7 +64,7 @@ def setup_logging():
 
     # 設定
     max_bytes = 2_000_000  # 2MB
-    backup_count = 5
+    backup_count = 7
     log_format = "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
     formatter = logging.Formatter(log_format)
 
@@ -152,7 +152,7 @@ days_to_keep = int(os.environ.get("LOG_DAYS_TO_KEEP", "7"))  # 7日保持
 cleanup_old_logs("logs", days_to_keep, logger)
 
 # Flask・環境設定
-print("(;^ω^) 起動中...")
+print("(;^ω^) 起動中static.")
 print(f"DEBUG: fitz module path: {fitz.__file__}")
 print(f"DEBUG: fitz.open available: {hasattr(fitz, 'open')}")
 
@@ -181,7 +181,7 @@ def get_font_path(app_root, font_family_name="IPAexGothic"):
 
     font_path = os.path.abspath(font_path)
     if not os.path.exists(font_path):
-        fallback_path = os.path.join(app_root, "fonts", "ipaexg.ttf")
+        fallback_path = os.path.join(app_root, "static/fonts", "ipaexg.ttf")
         if os.path.exists(fallback_path):
             logger.info(f"✅ フォントファイルが見つかりました: {fallback_path}")
             return fallback_path

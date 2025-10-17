@@ -24,14 +24,14 @@
       placeholder="生徒IDを入力してください"
     />
 
-    <button type="button" id="fetch-button">データ取得 & 確認 & 反映</button>
+    <button type="button" id="button-link">データ取得 & 確認 & 反映</button>
 
 
     <div id="student-info">設定情報をここに表示します</div>
 
     <h2 style="margin-top: 2em">2. PDFファイルのアップロード</h2>
     <br><input type="file" name="file" accept=".pdf" required />
-    <br><br><button type="submit" id="fetch-button"><b>アップロードして処理</b></button>
+    <br><br><button type="submit" id="button-link"><b>アップロードして処理</b></button>
   </form>
 </div>
 {% endblock %}
@@ -39,7 +39,7 @@
 {% block extra_js %}
 <script>
   document
-    .getElementById("fetch-button")
+    .getElementById("button-link")
     .addEventListener("click", async function () {
       const id = document.getElementById("student-id").value.trim();
       if (!id) {
