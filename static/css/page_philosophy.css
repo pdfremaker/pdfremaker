@@ -1,0 +1,27 @@
+.container {
+  max-width: 800px;
+  margin: 2em auto;
+  background: white;
+  padding: 2em;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+h1, h2 {
+  color: #333;
+}
+
+ul {
+  line-height: 1.8;
+}
+
+.action-link {
+  display: inline-block;
+  margin-top: 1.5em;
+  text-decoration: none;
+  color: #007BFF;
+  font-weight: bold;
+}
+.action-link:hover {
+  text-decoration: underline;
+}

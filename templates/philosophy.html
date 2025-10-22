@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}理念 - PDF Remaker{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/page_philosophy.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h1>PDF Remaker 開発理念</h1>
+  <p>このシステムはな、読字に困難を抱える小中高生が「自分にとって読みやすい教材」を手にできるよう支援する研究の一環で開発してんねん。</p>
+
+  <h2>開発の目的</h2>
+  <ul>
+    <li><strong>① 読字障がい者の支援：</strong> フォントや行間を調整して読みやすい教材を提供する</li>
+    <li><strong>② 教師の効率化：</strong> 生徒の設定情報を用いて個別配慮教材を自動生成する</li>
+    <li><strong>③ 生徒の自立支援：</strong> 自分の設定を使って自力で教材を再構成する</li>
+  </ul>
+
+  <h2>システムの概要</h2>
+  <p>アップロードされたPDFを解析して、Firestoreの設定をもとに再構成してな、読みやすい新しいPDFを生成すんねん。</p>
+
+  <h2>ビジョン</h2>
+  <p>誰もが「読みやすさ」を自分で選べる社会を創る。これが目標や。</p>
+
+  <a href="/" class="action-link">ホームへ戻る</a>
+</div>
+{% endblock %}

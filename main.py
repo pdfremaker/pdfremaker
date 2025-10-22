@@ -493,6 +493,11 @@ def view_logs():
         return f"ログ閲覧ページでエラーが発生しました: {e}", 500
 
 
+@app.route("/philosophy")
+def philosophy():
+    return render_template("philosophy.html")
+
+
 # ダウンロード機能（ファイル名指定で送信）
 @app.route("/download/<filename>")
 def download_file(filename):
