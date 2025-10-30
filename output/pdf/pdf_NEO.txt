@@ -1,12 +1,17 @@
-[フォント:Kosugi Maru][サイズ:48.00][ウェイト:normal]フォントサイズ８​
-[行間]0.62
-[フォント:Kosugi Maru][サイズ:67.00][ウェイト:normal]あああああああああああああ
-[行間]41.23
-[画像:/home/runner/workspace/output/pdf/image_p1_0.png:121.50:163.12:168.75:168.75]
-[行間]54.25
-[フォント:Kosugi Maru][サイズ:61.77][ウェイト:normal]いいいいいいいいいいいいいいいいいいいいいいいいい
-[フォント:Kosugi Maru][サイズ:61.77][ウェイト:normal]いいい いいいいいい、。・￥￥：」＠「ー＾,.¥/
-[行間]22.39
-[フォント:Kosugi Maru][サイズ:61.77][ウェイト:normal]・saaaしｆｋｊｌ；
-[行間]6.26
-[フォント:Kosugi Maru][サイズ:61.77][ウェイト:normal]ああ
+[フォント:Noto Serif JP][サイズ:46.00][ウェイト:normal]スタンプの数
+[フォント:Noto Serif JP][サイズ:46.00][ウェイト:normal]もらえる景品
+[行間]24.82
+[フォント:Noto Serif JP][サイズ:42.06][ウェイト:normal]歯ブラシの女神
+[フォント:Noto Serif JP][サイズ:37.96][ウェイト:normal]１個
+[行間]34.68
+[フォント:Noto Serif JP][サイズ:42.04][ウェイト:normal]校章スピナー
+[フォント:Noto Serif JP][サイズ:37.96][ウェイト:normal]２個
+[行間]26.55
+[フォント:Noto Serif JP][サイズ:37.98][ウェイト:normal]スタンプ景品にしました。
+[フォント:Noto Serif JP][サイズ:37.96][ウェイト:normal]３個
+[フォント:Noto Serif JP][サイズ:28.00][ウェイト:normal]全３種
+[行間]18.71
+[フォント:Noto Serif JP][サイズ:37.96][ウェイト:normal]かしわもっちぇりコースター
+[行間]17.74
+[フォント:Noto Serif JP][サイズ:37.98][ウェイト:normal]さかさのはまとめリーフ
+[フォント:Noto Serif JP][サイズ:37.96][ウェイト:normal]４個

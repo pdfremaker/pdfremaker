@@ -1,0 +1,70 @@
+
+--- Page 1 ---
+テキスト: LINE Bot×カレンダー
+テキスト: ～予定管理の新常識～
+テキスト: 斉藤翔塩澤悠月信太紗依芝元楽也北山朝晴
+
+--- Page 2 ---
+テキスト: 製作理由
+テキスト: • よく遅刻をしてしまう• グループ間での予定の管理が難しい• 予定通りに行動できない
+
+--- Page 3 ---
+[画像] /home/runner/workspace/output/06R6/image_p3_0.png | BBOX: (431.25, 39.001007080078125, 742.5, 507.0010070800781)
+
+[画像] /home/runner/workspace/output/06R6/image_p3_1.png | BBOX: (431.25, 39.001007080078125, 742.5, 507.0010070800781)
+
+テキスト: 制作内容
+テキスト: • LINEトークを"読み取る"
+テキスト: ↓• カレンダーに反映
+テキスト: ↓• 目的地への地図表示
+テキスト: 公共交通機関の時刻表表示
+
+--- Page 4 ---
+テキスト: 仕組み
+テキスト: 予定追加
+テキスト: • ユーザーから聞いた予定の情報をキャッシュに追加する
+テキスト: • キャッシュの情報をGoogle Calendar APIを使用して
+テキスト: 予定を追加する
+テキスト: 経路検索
+テキスト: • 出発地と目的地を設定し、Google Map APIを使用して
+テキスト: 経路検索を行う
+テキスト: • 経路検索で得た、距離、時間、運賃等の情報をユーザーに
+テキスト: 返信する
+テキスト: • 全ルート図を作成し、Google Driveを経由してユーザーに
+テキスト: 送信する
+
+--- Page 5 ---
+テキスト: 使ったもの
+テキスト: トーク読み取り/予定追加・LINE Bot       ・Messeging API・Google Calendar API・Google Apps Scriptルート提案/表示・LINE Bot                     ・Directions API・Google Drive API        ・Messeging API  ・Google Apps Script   カレンダー表示
+テキスト: ・HTML/CSS・JavaScript・Google Calendar API  ・Full Calendar
+
+--- Page 6 ---
+テキスト: 現状と課題
+[画像] /home/runner/workspace/output/06R6/image_p6_0.png | BBOX: (448.8999938964844, 110.25, 697.4000244140625, 269.4700012207031)
+
+[画像] /home/runner/workspace/output/06R6/image_p6_1.png | BBOX: (448.8999938964844, 110.25, 697.4000244140625, 269.4700012207031)
+
+テキスト: 現段階の進捗・Botの質問に答えて予定の
+テキスト: 情報を入力・カレンダーに上記の内容を
+テキスト: 書き込み
+テキスト: 課題点・特定のフォーマットでの入力
+テキスト: しかできない・ルート提案・表示機能が不完全
+テキスト: な状態
+
+--- Page 7 ---
+テキスト: 今後の展望
+テキスト: 予定追加・通常のやり取りから予定を読み取れるように
+テキスト: する・音声認識できるようにするルート提案・表示・列車の時刻を表示できるようにする・天気に応じてルートや所要時間を変更する・各ユーザーに応じたルートを提案する
+
+--- Page 8 ---
+テキスト: 参考文献
+テキスト: • Google Apps Script でLINE Bot を作成する
+テキスト: https://www2.kobe-u.ac.jp/~tnishida/programming/GAS-03.html
+テキスト: • LINE BOTからGoogleカレンダーに予定の追加＆一週間の予定の
+テキスト: 確認を行うhttps://qiita.com/dekamintv/items/a4cb9a195f80ef4fbdfa
+テキスト: • [GAS] ２地点間のルートを描画したマップ画像をスプレッドシー
+テキスト: トに挿入するにはStaticMapとDirectionFinderを使うhttps://qiita.com/STSHISHO/items/3c2028223b052a70f6fa
+テキスト: • Googleドライブへのログイン不要ファイルアップローダーをGAS
+テキスト: で作ったhttps://qiita.com/v2okimochi/items/06ed1ce7c56a877a1e10
+テキスト: • FullCalendar v6とGoogleカレンダーを連携させる方法：設定手順
+テキスト: 解説https://bloosh.jp/tips/5384/

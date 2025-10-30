@@ -27,11 +27,16 @@
     <button type="button" id="button-link">データ取得 & 確認 & 反映</button>
 
 
-    <div id="student-info">設定情報をここに表示します</div>
-
+   
+   <br> <select id="direction">
+      <option value="horizontal">横書き</option>
+      <option value="vertical">縦書き</option>
+    </select>
+    
     <h2 style="margin-top: 2em">2. PDFファイルのアップロード</h2>
     <br><input type="file" name="file" accept=".pdf" required />
     <br><br><button type="submit" id="button-link"><b>アップロードして処理</b></button>
+    
   </form>
 </div>
 {% endblock %}
